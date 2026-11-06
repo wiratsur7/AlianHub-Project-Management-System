@@ -703,24 +703,41 @@ module.exports = {
         })
     },
 
-    /* -------------- UPDATE DATES (start + due together) — used by the Gantt drag/resize -----------------*/
-    // Mirrors updatePoints: single $set, socket emit, history. Sets startDate and/or
-    // DueDate in one atomic write so a Gantt bar move emits one update, not two.
+    /* The counterpart date is checked inside the filter, so the order check and the write are one atomic update. */
     updateDates({firebaseObj, projectData, taskData, userData}) {
         return new Promise((resolve, reject) => {
             try {
+                const dateOrderMessage = "Start date must be on or before the due date";
                 const src = firebaseObj || {};
                 const setObj = {};
-                if (Object.prototype.hasOwnProperty.call(src, 'startDate')) {
-                    setObj.startDate = src.startDate ? new Date(src.startDate) : null;
+                for (const key of ['startDate', 'DueDate']) {
+                    if (!Object.prototype.hasOwnProperty.call(src, key)) continue;
+                    const raw = src[key];
+                    if (raw === undefined || raw === null || raw === '') {
+                        setObj[key] = null;
+                        continue;
+                    }
+                    const date = new Date(raw);
+                    if (Number.isNaN(date.getTime())) return resolve({ status: false, statusText: "Invalid date" });
+                    setObj[key] = date;
                 }
-                if (Object.prototype.hasOwnProperty.call(src, 'DueDate')) {
-                    setObj.DueDate = src.DueDate ? new Date(src.DueDate) : null;
+
+                const start = setObj.startDate || null;
+                const due = setObj.DueDate || null;
+                if (start && due && due < start) return resolve({ status: false, statusText: dateOrderMessage });
+
+                const filter = { _id: new mongoose.Types.ObjectId(taskData._id) };
+                if (due && !('startDate' in setObj)) {
+                    filter.$or = [{ startDate: null }, { startDate: { $exists: false } }, { startDate: { $lte: due } }];
                 }
+                if (start && !('DueDate' in setObj)) {
+                    filter.$or = [{ DueDate: null }, { DueDate: { $exists: false } }, { DueDate: { $gte: start } }];
+                }
+
                 const query = {
                     type: dbCollections.TASKS,
                     data: [
-                        { _id: new mongoose.Types.ObjectId(taskData._id) },
+                        filter,
                         { $set: { ...setObj } },
                         { returnDocument: "after" }
                     ]
@@ -728,8 +745,12 @@ module.exports = {
                 MongoDbCrudOpration(projectData.CompanyId, query, "findOneAndUpdate")
                 .then((result) => {
                     if (!result) {
-                        resolve({ status: false, statusText: "Task not found" });
-                        return;
+                        return MongoDbCrudOpration(projectData.CompanyId, {
+                            type: dbCollections.TASKS,
+                            data: [{ _id: filter._id }, { startDate: 1, DueDate: 1 }]
+                        }, 'findOne').then((existing) => {
+                            resolve({ status: false, statusText: existing && filter.$or ? dateOrderMessage : "Task not found" });
+                        });
                     }
 
                     socketEmitter.emit('update', { type: "update", data: result , updatedFields: setObj, module: 'task', companyId: projectData.CompanyId });
