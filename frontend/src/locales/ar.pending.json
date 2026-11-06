@@ -12559,7 +12559,6 @@
     "Views.desktop_only_workload": "Workload needs a wider screen. Open the project on a desktop to balance the week.",
     "Views.drag_hint": "Drag a task chip onto another person or day to rebalance.",
     "Views.drag_range": "{start} → {end}",
-    "Views.drag_snapped_back": "The bar went back because this scale moves it a week or more at a time. Switch to Days to move it by a day.",
     "Views.dragging": "Dragging {task} · {h} → drop on {name} {day}: {from} {fromPct}%, {name} {toPct}%",
     "Views.drop_field_here": "Drop a field here",
     "Views.drop_here": "drop here → due {date}",

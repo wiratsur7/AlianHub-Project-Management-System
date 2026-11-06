@@ -4159,7 +4159,6 @@ export default {
         "shift_cancel": "Cancel",
         "shift_done": "Moved {task} and shifted {n} task. | Moved {task} and shifted {n} tasks.",
         "shift_failed": "Those dates could not be saved, so nothing moved.",
-        "drag_snapped_back": "The bar went back because this scale moves it a week or more at a time. Switch to Days to move it by a day.",
         "shift_undo_failed": "The earlier dates could not be put back.",
         "by_estimate": "By estimate",
         "by_logged": "By logged",
