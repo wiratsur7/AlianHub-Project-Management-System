@@ -1,13 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushPromises, mount } from '@vue/test-utils';
 
-const { gantt, handlers, getters, apiRequest, updateDates, stub } = vi.hoisted(() => {
+const { gantt, handlers, getters, apiRequest, updateDates, updateDatesBatch, showUndoToast, stub } = vi.hoisted(() => {
     const handlers = {};
     const dragged = {};
     return {
         handlers,
         gantt: {
-            config: {},
+            config: { drag_mode: { move: 'move', resize: 'resize' } },
             templates: {},
             dragged,
             init: () => {},
@@ -23,6 +23,11 @@ const { gantt, handlers, getters, apiRequest, updateDates, stub } = vi.hoisted((
         getters: {},
         apiRequest: vi.fn(async () => ({ data: { status: false } })),
         updateDates: vi.fn(async () => ({})),
+        updateDatesBatch: vi.fn(async ({ rows }) => {
+            rows.forEach(({ task, startDate, DueDate }) => Object.assign(task, { startDate, DueDate }));
+            return {};
+        }),
+        showUndoToast: vi.fn(),
         stub: (name) => ({ default: { name, render: () => null } }),
     };
 });
@@ -35,11 +40,11 @@ vi.mock('@/composable', () => ({
     useCustomComposable: () => ({ checkPermission: () => true }),
     useGetterFunctions: () => ({ getUser: () => ({}) }),
 }));
-vi.mock('@/utils/TaskOperations', () => ({ default: { updateDates, updateDatesBatch: vi.fn(async () => ({})) } }));
+vi.mock('@/utils/TaskOperations', () => ({ default: { updateDates, updateDatesBatch } }));
 vi.mock('@/views/Projects/helper.js', () => ({ taskListHelper: () => ({ groupBy: () => {} }) }));
 vi.mock('@/views/Ai/plainLabels', () => ({ proposalTitle: () => '' }));
 vi.mock('@/components/organisms/TaskDetailOverlay/useTaskOverlay', () => ({ openTask: vi.fn() }));
-vi.mock('@/composable/useUndoToast', () => ({ showUndoToast: vi.fn() }));
+vi.mock('@/composable/useUndoToast', () => ({ showUndoToast }));
 vi.mock('@/components/organisms/Shell/ShellIcon.vue', () => stub('ShellIcon'));
 
 import GanttView from '@/views/Projects/GanttView/GanttView.vue';
@@ -72,14 +77,69 @@ const open = async ({ company = {}, project = {} } = {}) => {
 };
 
 const dragBlockerTo = async (wrapper, end) => {
-    gantt.dragged.blocker = { start_date: day(1), end_date: end };
-    handlers.onAfterTaskDrag('blocker');
+    gantt.dragged.blocker = { start_date: day(1), end_date: day(3) };
+    handlers.onBeforeTaskDrag('blocker', 'move');
+    gantt.dragged.blocker = { start_date: day(end.getDate() - 2), end_date: end };
+    handlers.onAfterTaskDrag('blocker', 'move');
     await flushPromises();
     return wrapper.find('.gv__shift');
 };
 
 describe('Gantt shift preview and the working-days setting', () => {
-    beforeEach(() => { updateDates.mockClear(); });
+    beforeEach(() => { updateDates.mockClear(); updateDatesBatch.mockClear(); showUndoToast.mockClear(); });
+
+    it('moves the dragged task by calendar days over a weekend while previewing dependant shifts in working days', async () => {
+        const wrapper = await open();
+        const panel = await dragBlockerTo(wrapper, day(5));
+
+        expect(panel.find('.gv__shift-range').text()).toBe(range(day(7), day(8)));
+        expect(handlers.onBeforeLinkAdd()).toBe(false);
+        expect(handlers.onBeforeLinkDelete('link-1')).toBe(false);
+        const moveOnly = wrapper.findAll('.gv__shift-actions button').find((button) => button.text().includes('Views.shift_only'));
+        await moveOnly.trigger('click');
+        await flushPromises();
+
+        expect(updateDates).toHaveBeenCalledWith(expect.objectContaining({
+            taskData: expect.objectContaining({ _id: 'blocker' }),
+            firebaseObj: { startDate: day(3), DueDate: day(5) },
+        }));
+        wrapper.unmount();
+    });
+
+    it('refreshes a dependency preview if its link graph changes before Apply', async () => {
+        const wrapper = await open();
+        const panel = await dragBlockerTo(wrapper, day(5));
+        expect(panel.exists()).toBe(true);
+        const blocker = getters['projectData/tasks'][PROJECT][SPRINT].tasks[0];
+        blocker.relations = [];
+        const apply = wrapper.findAll('.gv__shift-actions button').find((button) => button.text().includes('Views.shift_apply'));
+
+        await apply.trigger('click');
+        await flushPromises();
+
+        expect(updateDatesBatch).not.toHaveBeenCalled();
+        expect(wrapper.find('.gv__shift').exists()).toBe(true);
+        expect(wrapper.findAll('.gv__shift-actions button').some((button) => button.text().includes('Views.shift_apply'))).toBe(false);
+        wrapper.unmount();
+    });
+
+    it('does not undo dates that changed again after Apply', async () => {
+        const wrapper = await open();
+        await dragBlockerTo(wrapper, day(5));
+        const apply = wrapper.findAll('.gv__shift-actions button').find((button) => button.text().includes('Views.shift_apply'));
+        await apply.trigger('click');
+        await flushPromises();
+
+        const undo = showUndoToast.mock.calls[0][0].undo;
+        const blocker = getters['projectData/tasks'][PROJECT][SPRINT].tasks[0];
+        blocker.DueDate = day(12);
+        await undo();
+
+        expect(updateDatesBatch).toHaveBeenCalledTimes(2);
+        expect(updateDatesBatch.mock.calls[1][0].rows.map(({ task }) => task._id)).toEqual(['waiting']);
+        expect(blocker.DueDate).toEqual(day(12));
+        wrapper.unmount();
+    });
 
     it('lands the dependant on Monday for a company that never chose a week, and says working days', async () => {
         const wrapper = await open();

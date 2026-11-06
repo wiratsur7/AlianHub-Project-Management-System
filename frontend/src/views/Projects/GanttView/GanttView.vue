@@ -72,7 +72,7 @@
                     </div>
                     <div v-for="t in unscheduled" :key="t._id" class="gv__tray-item" @click="open(t)">
                         <span class="gv__tray-name" :title="t.TaskName">{{ t.TaskName || t.TaskKey }}</span>
-                        <button v-if="!readOnly" type="button" class="ah-btn ah-btn--ghost ah-btn--sm" @click.stop="schedule(t)">
+                        <button v-if="canEditTaskDates(t)" type="button" class="ah-btn ah-btn--ghost ah-btn--sm" @click.stop="schedule(t)">
                             {{ $t('Views.schedule') }}
                         </button>
                     </div>
@@ -155,10 +155,12 @@ import { shiftDependants } from '@ganttShift';
 import { workingDaysFor, countsEveryDay } from '@workingDays';
 import { openTask } from '@/components/organisms/TaskDetailOverlay/useTaskOverlay';
 import { showUndoToast } from '@/composable/useUndoToast';
-import { snappedBack } from './dragSnap';
+import { datesForGanttDrag } from './dragDates';
+import { growTimelineRange, includeTimelineDates, initialTimelineRange } from './timelineRange';
 import EmptyState from '@/components/atom/EmptyState/EmptyState.vue';
 import { useAddFirstTask } from '@/views/Projects/composables/useAddFirstTask';
 import { useToast } from 'vue-toast-notification';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 defineOptions({ name: 'GanttView' });
 
@@ -167,7 +169,8 @@ const props = defineProps({
     sprints: { type: Array, default: () => [] },
 });
 
-const { getters } = useStore();
+const store = useStore();
+const { getters } = store;
 const { t } = useI18n();
 const { checkPermission } = useCustomComposable();
 const { getUser } = useGetterFunctions();
@@ -201,6 +204,24 @@ let ready = false;    // init complete
 let suppress = false; // guard: programmatic re-renders must not fire write handlers
 let eventIds = [];
 let baselineLayer = null;
+let taskLoadInFlight = false;
+const completedTaskLoads = new Set();
+let timelineRange = { startDate: null, endDate: null };
+let timelinePanning = false;
+let taskDragInProgress = false;
+let renderDeferred = false;
+let scrollCheckScheduled = false;
+let activeTaskDragSnapshot = null;
+let viewportRestoreVersion = 0;
+let pendingInitialViewport = null;
+let panPointerDownHandler = null;
+let panPointerUpHandler = null;
+let viewportWheelHandler = null;
+let scrollbarPointerDownHandler = null;
+let windowBlurHandler = null;
+let viewportInteractionRoot = null;
+let dateBatchWriteCount = 0;
+const pendingDateWrites = new Set();
 
 const isMobile = computed(() => Number(clientWidth.value || 0) > 0 && Number(clientWidth.value) < 768);
 
@@ -265,7 +286,7 @@ const collisionLinks = computed(() => fsCollisionLinks(scheduled.value.map((task
     id: String(task._id), startDate: task.startDate, DueDate: task.DueDate, blocks: blocksOf(task),
 }))));
 
-const shortDate = (value) => new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+const shortDate = (value) => formatDisplayDate(value, 'MMM D');
 const taskLabel = (task) => (task && (task.TaskName || task.TaskKey)) || t('Views.untitled');
 const labelOf = (id) => taskLabel(findTask(id));
 const shiftRows = computed(() => (shiftPreview.value?.shifts || []).map((shift) => ({
@@ -298,7 +319,7 @@ const baselineEnd = (task) => {
 const signature = computed(() =>
     JSON.stringify(scheduled.value.map((task) => [
         task._id, task.TaskName, task.startDate, task.DueDate, task.ParentTaskId || 0, task.sprintId || '',
-        task.status?.type || task.statusType || '', task.Task_Leader || '',
+        task.status?.type || task.statusType || '', task.Task_Leader || '', task.deletedStatusKey,
         blocksOf(task),
     ]))
 );
@@ -348,6 +369,7 @@ function toGanttData() {
             owner: task.Task_Leader || (Array.isArray(task.AssigneeUserId) ? task.AssigneeUserId[0] : '') || '',
             baseline_end: line,
             critical: criticalIds.value.has(String(task._id)),
+            readonly: readOnly.value || task.deletedStatusKey === 2,
         };
     });
     const ids = new Set(data.map((d) => d.id));
@@ -396,16 +418,266 @@ function toGanttData() {
     return { data: groups.concat(data), links };
 }
 
+const validDate = (value) => value instanceof Date && Number.isFinite(value.getTime());
+const sameDate = (left, right) => left?.getTime() === right?.getTime();
+const sameDateInstant = (left, right) => {
+    const leftTime = new Date(left).getTime();
+    const rightTime = new Date(right).getTime();
+    return Number.isFinite(leftTime) && leftTime === rightTime;
+};
+
+function timelineDates() {
+    const dates = [];
+    scheduled.value.forEach((task) => {
+        [task.startDate, task.DueDate].forEach((value) => {
+            const date = new Date(value);
+            if (validDate(date)) dates.push(date);
+        });
+    });
+    milestones.value.forEach((milestone) => {
+        const date = new Date(milestone.date);
+        if (validDate(date)) dates.push(date);
+    });
+    return dates;
+}
+
+function datesWithViewportBuffer(dates, visible = visibleTimelineDates()) {
+    if (!visible || !dates.length) return dates;
+    const padded = initialTimelineRange({
+        taskDates: dates,
+        viewportStart: visible.start,
+        viewportEnd: visible.end,
+    });
+    return [...dates, padded.startDate, padded.endDate].filter(validDate);
+}
+
+function visibleTimelineDates() {
+    if (!gantt || typeof gantt.getScrollState !== 'function' || typeof gantt.dateFromPos !== 'function') return null;
+    const scroll = gantt.getScrollState();
+    const left = Number(scroll?.x) || 0;
+    const viewportWidth = Number(gantt.$task?.clientWidth);
+    const stateWidth = Number(scroll?.inner_width);
+    const width = viewportWidth > 1 ? viewportWidth : (stateWidth > 1 ? stateWidth : 0);
+    if (!width) return null;
+    const start = gantt.dateFromPos(left);
+    const end = gantt.dateFromPos(left + width);
+    return validDate(start) && validDate(end) && end > start ? { start, end } : null;
+}
+
+function captureViewportAnchor() {
+    if (!gantt || typeof gantt.getScrollState !== 'function') return null;
+    const scroll = gantt.getScrollState();
+    if (pendingInitialViewport?.date) {
+        return { date: new Date(pendingInitialViewport.date), y: pendingInitialViewport.y };
+    }
+    let date = null;
+    try { date = gantt.dateFromPos(Number(scroll?.x) || 0); } catch (e) { /* chart is not ready */ }
+    return { date: validDate(date) ? date : null, y: Number(scroll?.y) || 0 };
+}
+
+function restoreViewport(anchor) {
+    if (!anchor || !gantt || typeof gantt.scrollTo !== 'function') return;
+    const version = ++viewportRestoreVersion;
+    const restore = () => {
+        if (!gantt || !ready || version !== viewportRestoreVersion) return;
+        const x = anchor.date && typeof gantt.posFromDate === 'function' ? gantt.posFromDate(anchor.date) : undefined;
+        gantt.scrollTo(x, anchor.y);
+        if (pendingInitialViewport?.date && anchor.date?.getTime() === pendingInitialViewport.date.getTime()) {
+            pendingInitialViewport = null;
+        }
+    };
+    // Range growth can reflow the timeline while DHTMLX is processing a drag.
+    // Restore synchronously so the active gesture keeps its date and row under
+    // the pointer; delayed restoration would either be dropped or snap back to
+    // an anchor from before the user finished panning.
+    if (timelinePanning || taskDragInProgress) {
+        restore();
+        return;
+    }
+    const raf = typeof requestAnimationFrame === 'function' ? requestAnimationFrame : (callback) => setTimeout(callback, 0);
+    raf(() => raf(restore));
+}
+
+function setTimelineRange(next, { anchor = null, render = true } = {}) {
+    if (!validDate(next?.startDate) || !validDate(next?.endDate)) return false;
+    if (sameDate(next.startDate, timelineRange.startDate) && sameDate(next.endDate, timelineRange.endDate)) return false;
+    timelineRange = { startDate: new Date(next.startDate), endDate: new Date(next.endDate) };
+    if (gantt?.config) {
+        gantt.config.start_date = new Date(timelineRange.startDate);
+        gantt.config.end_date = new Date(timelineRange.endDate);
+    }
+    if (render && gantt) {
+        gantt.render();
+        restoreViewport(anchor || captureViewportAnchor());
+    }
+    return true;
+}
+
+function extendTimelineAtViewport() {
+    if (!ready || !gantt || !validDate(timelineRange.startDate) || !validDate(timelineRange.endDate)) return false;
+    const visible = visibleTimelineDates();
+    if (!visible) return false;
+    const next = growTimelineRange({
+        rangeStart: timelineRange.startDate,
+        rangeEnd: timelineRange.endDate,
+        visibleStart: visible.start,
+        visibleEnd: visible.end,
+    });
+    if (sameDate(next.startDate, timelineRange.startDate) && sameDate(next.endDate, timelineRange.endDate)) return false;
+    const anchor = captureViewportAnchor();
+    return setTimelineRange(next, { anchor });
+}
+
+function ensureTimelineForDraggedTask(task) {
+    if (!task || !validDate(task.start_date) || !validDate(task.end_date)) return;
+    const visible = visibleTimelineDates();
+    const draggedDates = datesWithViewportBuffer([task.start_date, task.end_date], visible);
+    const next = includeTimelineDates({
+        rangeStart: timelineRange.startDate,
+        rangeEnd: timelineRange.endDate,
+        taskDates: draggedDates,
+    });
+    if (!validDate(next.startDate) || !validDate(next.endDate)) return;
+    if (sameDate(next.startDate, timelineRange.startDate) && sameDate(next.endDate, timelineRange.endDate)) {
+        extendTimelineAtViewport();
+        return;
+    }
+    const padded = visible ? growTimelineRange({
+        rangeStart: next.startDate,
+        rangeEnd: next.endDate,
+        visibleStart: visible.start,
+        visibleEnd: visible.end,
+    }) : next;
+    setTimelineRange(padded, { anchor: captureViewportAnchor() });
+}
+
+function scheduleViewportRangeCheck() {
+    // Keep this active during timeline panning: its `render()` grows the scrollable range without reparsing tasks.
+    if (scrollCheckScheduled || !ready || taskDragInProgress) return;
+    scrollCheckScheduled = true;
+    const raf = typeof requestAnimationFrame === 'function' ? requestAnimationFrame : (callback) => setTimeout(callback, 0);
+    raf(() => {
+        scrollCheckScheduled = false;
+        if (!taskDragInProgress) extendTimelineAtViewport();
+    });
+}
+
+function flushDeferredRender() {
+    if (!renderDeferred || timelinePanning || taskDragInProgress) return;
+    renderDeferred = false;
+    nextTick(() => renderData());
+}
+
+function attachTimelinePanGuard() {
+    const timeline = gantt?.$task;
+    if (!timeline || typeof document === 'undefined') return;
+    viewportInteractionRoot = gantt?.$root || gantt?.$container || timeline;
+    const invalidatePendingRestore = () => { viewportRestoreVersion += 1; };
+    panPointerDownHandler = (event) => {
+        if (event.button !== 0 || event.target?.closest?.('.gantt_task_line, .gantt_task_link')) return;
+        pendingInitialViewport = null;
+        timelinePanning = true;
+        invalidatePendingRestore();
+    };
+    panPointerUpHandler = () => {
+        if (!timelinePanning) return;
+        timelinePanning = false;
+        scheduleViewportRangeCheck();
+        flushDeferredRender();
+    };
+    windowBlurHandler = () => {
+        const hadGesture = timelinePanning || taskDragInProgress;
+        timelinePanning = false;
+        if (taskDragInProgress) {
+            taskDragInProgress = false;
+            activeTaskDragSnapshot = null;
+            renderDeferred = true;
+        }
+        if (hadGesture) {
+            scheduleViewportRangeCheck();
+            flushDeferredRender();
+        }
+    };
+    viewportWheelHandler = () => {
+        pendingInitialViewport = null;
+        invalidatePendingRestore();
+    };
+    scrollbarPointerDownHandler = (event) => {
+        if (event.target?.closest?.('.gantt_hor_scroll, .gantt_ver_scroll')) {
+            pendingInitialViewport = null;
+            invalidatePendingRestore();
+        }
+    };
+    timeline.addEventListener('mousedown', panPointerDownHandler, true);
+    viewportInteractionRoot.addEventListener('wheel', viewportWheelHandler, true);
+    viewportInteractionRoot.addEventListener('mousedown', scrollbarPointerDownHandler, true);
+    document.addEventListener('mouseup', panPointerUpHandler, true);
+    document.addEventListener('pointerup', panPointerUpHandler, true);
+    window.addEventListener('blur', windowBlurHandler);
+}
+
+function detachTimelinePanGuard() {
+    if (panPointerDownHandler) gantt?.$task?.removeEventListener('mousedown', panPointerDownHandler, true);
+    if (viewportWheelHandler) viewportInteractionRoot?.removeEventListener('wheel', viewportWheelHandler, true);
+    if (scrollbarPointerDownHandler) viewportInteractionRoot?.removeEventListener('mousedown', scrollbarPointerDownHandler, true);
+    if (panPointerUpHandler && typeof document !== 'undefined') {
+        document.removeEventListener('mouseup', panPointerUpHandler, true);
+        document.removeEventListener('pointerup', panPointerUpHandler, true);
+        window.removeEventListener('blur', windowBlurHandler);
+    }
+    panPointerDownHandler = null;
+    panPointerUpHandler = null;
+    viewportWheelHandler = null;
+    scrollbarPointerDownHandler = null;
+    windowBlurHandler = null;
+    viewportInteractionRoot = null;
+    timelinePanning = false;
+}
+
 function renderData() {
     if (!ready || !gantt) return;
+    if (timelinePanning || taskDragInProgress) {
+        renderDeferred = true;
+        return;
+    }
+    let anchor = captureViewportAnchor();
+    const dates = timelineDates();
+    const oldRange = timelineRange;
+    if (validDate(oldRange.startDate) && validDate(oldRange.endDate)) {
+        const bufferedDates = datesWithViewportBuffer(dates);
+        setTimelineRange(includeTimelineDates({
+            rangeStart: oldRange.startDate,
+            rangeEnd: oldRange.endDate,
+            taskDates: bufferedDates,
+        }), { render: false });
+    }
     suppress = true;
     try {
         gantt.clearAll();
         gantt.parse(toGanttData());
+        if ((!validDate(timelineRange.startDate) || !validDate(timelineRange.endDate)) && dates.length) {
+            const visible = visibleTimelineDates();
+            const state = typeof gantt.getState === 'function' ? gantt.getState() : {};
+            const viewportStart = visible?.start || (validDate(state.min_date) ? state.min_date : new Date());
+            const viewportEnd = visible?.end || (validDate(state.max_date) && state.max_date > viewportStart ? state.max_date : new Date(viewportStart));
+            const initial = initialTimelineRange({ taskDates: dates, viewportStart, viewportEnd });
+            setTimelineRange(initial, { render: false });
+            const firstScheduledDate = dates.reduce((first, date) => (!first || date < first ? date : first), null);
+            if (firstScheduledDate) pendingInitialViewport = { date: new Date(firstScheduledDate), y: anchor?.y || 0 };
+            gantt.render();
+        }
+        if (pendingInitialViewport?.date) {
+            // Keep the initial date as the anchor until its deferred restore
+            // completes. Another store or milestone render can happen before
+            // that restore and must not replace the target with a stale read.
+            if (typeof gantt.showDate === 'function') gantt.showDate(pendingInitialViewport.date);
+            anchor = { date: new Date(pendingInitialViewport.date), y: pendingInitialViewport.y };
+        }
         placeToday();
     } finally {
         suppress = false;
     }
+    restoreViewport(anchor);
 }
 
 let todayMarker = null;
@@ -418,48 +690,135 @@ function placeToday() {
 }
 
 function saveDates(task, dates) {
+    const taskId = String(task?._id || '');
+    if (!taskId || pendingDateWrites.has(taskId)) return;
+    pendingDateWrites.add(taskId);
     taskClass.updateDates({
         firebaseObj: dates,
         projectData: buildProjectData(),
         taskData: task,
         userData: buildUserData(),
-    }).catch((e) => console.error('Gantt: updateDates failed', e));
+    }).catch((e) => {
+        console.error('Gantt: updateDates failed', e);
+        toast.error(t('Views.shift_failed'));
+        renderData();
+    }).finally(() => {
+        pendingDateWrites.delete(taskId);
+        flushDeferredRender();
+    });
 }
 
 /* The batch write leaves archived tasks out, so they are never offered as shiftable. */
-const mayShift = (id) => !readOnly.value && findTask(id)?.deletedStatusKey !== 2;
+const canEditTaskDates = (task) => !readOnly.value && task?.deletedStatusKey !== 2;
+const mayShift = (id) => canEditTaskDates(findTask(id));
 
-function onTaskDragged(id) {
-    if (suppress) return;
-    const g = gantt.getTask(id);
-    const task = findTask(id);
-    if (!g || !task) return;
-    if (zoom.value !== 'Day' && snappedBack(task, g)) {
-        toast.info(t('Views.drag_snapped_back'));
-        return;
-    }
-    const to = { startDate: g.start_date, DueDate: g.end_date };
-    const plan = shiftDependants(
+function calculateShiftPlan(id, to) {
+    return shiftDependants(
         scheduled.value.map((row) => ({ id: String(row._id), startDate: row.startDate, DueDate: row.DueDate })),
         scheduled.value.flatMap((row) => blocksOf(row).map((target) => ({ source: String(row._id), target }))),
         String(id),
         to,
         { canEdit: mayShift, workingDays: workingDays.value },
     );
-    if (!plan.shifts.length && !plan.conflicts.length && !plan.cycle.length) {
-        saveDates(task, to);
+}
+
+function shiftPlanSignature(plan) {
+    const stamp = (value) => {
+        const date = new Date(value);
+        return validDate(date) ? date.getTime() : null;
+    };
+    return JSON.stringify({
+        shifts: (plan?.shifts || []).map((shift) => ({
+            id: String(shift.id),
+            from: [stamp(shift.from?.startDate), stamp(shift.from?.DueDate)],
+            to: [stamp(shift.to?.startDate), stamp(shift.to?.DueDate)],
+            days: shift.days,
+        })).sort((left, right) => left.id.localeCompare(right.id)),
+        conflicts: (plan?.conflicts || []).map((conflict) => ({ id: String(conflict.id), days: conflict.days }))
+            .sort((left, right) => left.id.localeCompare(right.id)),
+        cycle: plan?.cycle || [],
+    });
+}
+
+function onTaskDragged(id, mode) {
+    const snapshot = activeTaskDragSnapshot;
+    activeTaskDragSnapshot = null;
+    taskDragInProgress = false;
+    if (suppress) { flushDeferredRender(); return; }
+    const g = gantt.getTask(id);
+    const task = findTask(id);
+    if (!g || !task || !snapshot || snapshot.id !== String(id) || !canEditTaskDates(task)
+        || !sameDateInstant(task.startDate, snapshot.stored.startDate)
+        || !sameDateInstant(task.DueDate, snapshot.stored.DueDate)) {
+        renderData();
+        flushDeferredRender();
         return;
     }
-    shiftPreview.value = { id: String(id), task, to, ...plan };
+    const to = datesForGanttDrag({
+        mode,
+        dragModes: gantt.config.drag_mode || {},
+        original: snapshot.original,
+        dragged: g,
+        stored: snapshot.stored,
+    });
+    if (!to) {
+        const dragModes = gantt.config.drag_mode || {};
+        const supportedMode = mode === dragModes.move || mode === dragModes.resize;
+        if (supportedMode && zoom.value !== 'Day') toast.info(t('Views.drag_snapped_back'));
+        renderData();
+        flushDeferredRender();
+        return;
+    }
+    const plan = calculateShiftPlan(id, to);
+    if (!plan.shifts.length && !plan.conflicts.length && !plan.cycle.length) {
+        saveDates(task, to);
+        flushDeferredRender();
+        return;
+    }
+    shiftPreview.value = {
+        id: String(id), task, from: { startDate: task.startDate, DueDate: task.DueDate }, to, ...plan,
+    };
     nextTick(() => shiftEl.value?.querySelector('button')?.focus());
+    flushDeferredRender();
 }
 
 function writeDates(rows) {
-    return taskClass.updateDatesBatch({ rows, userData: buildUserData() });
+    dateBatchWriteCount += 1;
+    return taskClass.updateDatesBatch({ rows, userData: buildUserData() }).finally(() => {
+        dateBatchWriteCount = Math.max(0, dateBatchWriteCount - 1);
+    });
 }
 
-function restoreDates(before) {
-    const rows = before.map(({ id, startDate, DueDate }) => ({ task: findTask(id), startDate, DueDate })).filter((row) => row.task);
+function currentShiftTask(plan) {
+    const task = findTask(plan?.id);
+    if (!task || !canEditTaskDates(task)
+        || !sameDateInstant(task.startDate, plan.from?.startDate)
+        || !sameDateInstant(task.DueDate, plan.from?.DueDate)) return null;
+    return task;
+}
+
+function currentShiftDependants(plan) {
+    return (plan?.shifts || []).map((shift) => {
+        const task = findTask(shift.id);
+        if (!task || !canEditTaskDates(task)
+            || !sameDateInstant(task.startDate, shift.from?.startDate)
+            || !sameDateInstant(task.DueDate, shift.from?.DueDate)) return null;
+        return { task, ...shift.to };
+    });
+}
+
+function restoreDates(before, expectedAfter) {
+    const expectedById = new Map((expectedAfter || []).map((row) => [String(row.id), row]));
+    const rows = before.flatMap(({ id, startDate, DueDate }) => {
+        const task = findTask(id);
+        const expected = expectedById.get(String(id));
+        if (!task || !expected
+            || !sameDateInstant(task.startDate, expected.startDate)
+            || !sameDateInstant(task.DueDate, expected.DueDate)) return [];
+        return [{ task, startDate, DueDate }];
+    });
+    if (rows.length < before.length) toast.error(t('Views.shift_failed'));
+    if (!rows.length) return Promise.resolve();
     return writeDates(rows).catch((e) => {
         console.error('Gantt: undo shift failed', e);
         toast.error(t('Views.shift_undo_failed'));
@@ -469,14 +828,30 @@ function restoreDates(before) {
 async function applyShift() {
     const plan = shiftPreview.value;
     if (!plan || shiftBusy.value) return;
+    const rootTask = currentShiftTask(plan);
+    const dependants = currentShiftDependants(plan);
+    if (!rootTask || dependants.some((row) => !row)) {
+        shiftPreview.value = null;
+        toast.error(t('Views.shift_failed'));
+        renderData();
+        return;
+    }
+    const latestPlan = calculateShiftPlan(plan.id, plan.to);
+    if (shiftPlanSignature(latestPlan) !== shiftPlanSignature(plan)) {
+        // Keep the updated preview visible and require a second confirmation
+        // if links, permissions, or dates changed while the user was deciding.
+        shiftPreview.value = { ...plan, ...latestPlan };
+        return;
+    }
     shiftBusy.value = true;
-    const rows = [{ task: plan.task, ...plan.to }, ...plan.shifts.map((shift) => ({ task: findTask(shift.id), ...shift.to }))].filter((row) => row.task);
+    const rows = [{ task: rootTask, ...plan.to }, ...dependants];
     const before = rows.map(({ task }) => ({ id: String(task._id), startDate: task.startDate, DueDate: task.DueDate }));
+    const expectedAfter = rows.map(({ task, startDate, DueDate }) => ({ id: String(task._id), startDate, DueDate }));
     try {
         await writeDates(rows);
         showUndoToast({
-            message: t('Views.shift_done', { task: taskLabel(plan.task), n: plan.shifts.length }, plan.shifts.length),
-            undo: () => restoreDates(before),
+            message: t('Views.shift_done', { task: taskLabel(rootTask), n: plan.shifts.length }, plan.shifts.length),
+            undo: () => restoreDates(before, expectedAfter),
         });
     } catch (e) {
         console.error('Gantt: shift failed', e);
@@ -491,8 +866,15 @@ async function applyShift() {
 function moveOnly() {
     const plan = shiftPreview.value;
     if (!plan || shiftBusy.value) return;
+    const task = currentShiftTask(plan);
+    if (!task) {
+        shiftPreview.value = null;
+        toast.error(t('Views.shift_failed'));
+        renderData();
+        return;
+    }
     shiftPreview.value = null;
-    saveDates(plan.task, plan.to);
+    saveDates(task, plan.to);
 }
 
 function cancelShift() {
@@ -523,6 +905,7 @@ function persistLinkDelete(link) {
     }).catch((e) => console.error('Gantt: link remove failed', e));
 }
 function schedule(task) {
+    if (!canEditTaskDates(task)) return;
     const start = new Date(); start.setHours(0, 0, 0, 0);
     const end = new Date(start); end.setDate(end.getDate() + 1);
     taskClass.updateDates({
@@ -555,9 +938,14 @@ function applyScales(level) {
     }
 }
 function setZoom(level) {
+    const anchor = captureViewportAnchor();
+    pendingInitialViewport = null;
     zoom.value = level;
     applyScales(level);
-    if (ready && gantt) gantt.render();
+    if (ready && gantt) {
+        gantt.render();
+        restoreViewport(anchor);
+    }
 }
 function toggleCritical() {
     showCritical.value = !showCritical.value;
@@ -579,7 +967,7 @@ const replanLines = computed(() => {
     const lines = [t(everyDayWorks.value ? 'Views.replan_chain' : 'Views.replan_chain_working', {
         n: chain.length,
         days: t(everyDayWorks.value ? 'Views.days_count' : 'Views.working_days_count', { n: span }, span),
-        date: end ? end.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '',
+        date: end ? formatDisplayDate(end, 'MMM D') : '',
     }, chain.length)];
     const now = Date.now();
     const late = chain.find((task) => new Date(task.DueDate).getTime() < now && (task.status?.type || task.statusType) !== 'close');
@@ -593,14 +981,24 @@ const replanLines = computed(() => {
 // the Gantt tab finds an empty store and renders nothing (it only worked when another view
 // had already populated it). Mirrors ListView's onMounted loader (state.tasks via Mongo).
 function ensureTasksLoaded() {
-    if (tasks.value.length) return; // already loaded (e.g. arrived here from another view)
     const proj = (selectedProject.value && selectedProject.value._id) ? selectedProject.value : props.projectData;
     if (!proj || !proj._id || !Array.isArray(props.sprints) || !props.sprints.length) return;
-    try {
-        groupBy(0, true, proj, props.sprints, ref([]), false, 'list', false, true, () => {});
-    } catch (e) {
+    const key = `${proj._id}:${sprintIds.value.slice().sort().join(',')}`;
+    if (taskLoadInFlight || completedTaskLoads.has(key)) return;
+    taskLoadInFlight = true;
+    Promise.resolve(groupBy(0, true, proj, props.sprints, ref([]), false, 'list', false, true, () => {}, {
+        allSprints: true,
+        allPages: true,
+    })).then((loaded) => {
+        if (loaded) completedTaskLoads.add(key);
+    }).catch((e) => {
         console.error('Gantt: task-load trigger failed', e);
-    }
+    }).finally(() => {
+        taskLoadInFlight = false;
+        const currentProject = (selectedProject.value && selectedProject.value._id) ? selectedProject.value : props.projectData;
+        const currentKey = currentProject?._id ? `${currentProject._id}:${sprintIds.value.slice().sort().join(',')}` : '';
+        if (currentKey && currentKey !== key && !completedTaskLoads.has(currentKey)) ensureTasksLoaded();
+    });
 }
 
 function ownerCell(task) {
@@ -636,6 +1034,7 @@ onMounted(async () => {
     if (!ganttEl.value || !gantt) { loading.value = false; return; }
 
     try {
+        if (typeof gantt.plugins === 'function') gantt.plugins({ drag_timeline: true });
         // 'auto' probes with new Function and, where nothing blocks it, builds its date formatters with it,
         // so a report-only content security policy would log an eval on every Gantt view.
         gantt.config.csp = true;
@@ -645,7 +1044,12 @@ onMounted(async () => {
         gantt.config.drag_resize = !readOnly.value;
         gantt.config.drag_links = !readOnly.value;
         gantt.config.drag_progress = false;
-        gantt.config.fit_tasks = true;
+        gantt.config.fit_tasks = false;
+        delete gantt.config.start_date;
+        delete gantt.config.end_date;
+        // The plugin writes its defaults when activated, so configure it afterwards.
+        // Empty timeline space pans; task bars and dependency links keep their own gestures.
+        gantt.config.drag_timeline = { ignore: '.gantt_task_line, .gantt_task_link', useKey: false };
         gantt.config.row_height = lookRowHeight();
         gantt.config.bar_height = 16;
         gantt.config.show_markers = true;
@@ -672,6 +1076,7 @@ onMounted(async () => {
         applyScales(zoom.value);
 
         gantt.init(ganttEl.value);
+        attachTimelinePanGuard();
 
         // Baseline runs as its own layer so the actual bar keeps dhtmlx's own drag maths.
         if (typeof gantt.addTaskLayer === 'function') {
@@ -688,8 +1093,42 @@ onMounted(async () => {
             });
         }
 
-        eventIds.push(gantt.attachEvent('onBeforeTaskDrag', () => !shiftPreview.value));
-        eventIds.push(gantt.attachEvent('onAfterTaskDrag', (id) => onTaskDragged(id)));
+        eventIds.push(gantt.attachEvent('onBeforeTaskDrag', (id) => {
+            const task = findTask(id);
+            const allowed = !shiftPreview.value && !shiftBusy.value && !dateBatchWriteCount
+                && !pendingDateWrites.has(String(id)) && canEditTaskDates(task);
+            taskDragInProgress = allowed;
+            activeTaskDragSnapshot = null;
+            if (allowed) {
+                pendingInitialViewport = null;
+                const chartTask = gantt.getTask(id) || {};
+                const startDate = chartTask.start_date || task.startDate;
+                const DueDate = chartTask.end_date || task.DueDate;
+                if (validDate(new Date(startDate)) && validDate(new Date(DueDate))) {
+                    activeTaskDragSnapshot = {
+                        id: String(id),
+                        original: { start_date: new Date(startDate), end_date: new Date(DueDate) },
+                        stored: {
+                            ...task,
+                            startDate: task.startDate instanceof Date ? new Date(task.startDate) : task.startDate,
+                            DueDate: task.DueDate instanceof Date ? new Date(task.DueDate) : task.DueDate,
+                        },
+                    };
+                } else {
+                    taskDragInProgress = false;
+                    return false;
+                }
+                viewportRestoreVersion += 1;
+            }
+            return allowed;
+        }));
+        eventIds.push(gantt.attachEvent('onTaskDrag', (id, mode, task) => {
+            if (taskDragInProgress) ensureTimelineForDraggedTask(task || gantt.getTask(id));
+        }));
+        eventIds.push(gantt.attachEvent('onAfterTaskDrag', (id, mode) => onTaskDragged(id, mode)));
+        eventIds.push(gantt.attachEvent('onGanttScroll', () => scheduleViewportRangeCheck()));
+        eventIds.push(gantt.attachEvent('onBeforeLinkAdd', () => !shiftPreview.value && !shiftBusy.value));
+        eventIds.push(gantt.attachEvent('onBeforeLinkDelete', () => !shiftPreview.value && !shiftBusy.value));
         eventIds.push(gantt.attachEvent('onAfterLinkAdd', (id, link) => persistLinkAdd(id, link)));
         eventIds.push(gantt.attachEvent('onAfterLinkDelete', (id, link) => persistLinkDelete(link)));
         eventIds.push(gantt.attachEvent('onTaskDblClick', (id) => {
@@ -733,21 +1172,30 @@ async function loadProposals() {
 
 watch(signature, () => { if (ready && !suppress) renderData(); });
 watch(criticalIds, () => { if (ready && !suppress) renderData(); });
-watch(workingDays, () => { if (ready && gantt) gantt.render(); });
+watch(workingDays, () => {
+    if (!ready || !gantt) return;
+    const anchor = captureViewportAnchor();
+    gantt.render();
+    restoreViewport(anchor);
+});
 
 watch(readOnly, (ro) => {
     if (!ready || !gantt) return;
+    if (ro) shiftPreview.value = null;
+    const anchor = captureViewportAnchor();
     gantt.config.readonly = ro;
     gantt.config.drag_move = !ro;
     gantt.config.drag_resize = !ro;
     gantt.config.drag_links = !ro;
     gantt.render();
+    restoreViewport(anchor);
 });
 
 // Sprints can arrive after mount on a fresh reload — trigger the load once they're present.
 watch(() => props.sprints, () => ensureTasksLoaded(), { deep: true });
 
 onBeforeUnmount(() => {
+    detachTimelinePanGuard();
     try {
         if (gantt) {
             eventIds.forEach((id) => gantt.detachEvent(id));
@@ -763,6 +1211,14 @@ onBeforeUnmount(() => {
     todayMarker = null;
     gantt = null;
     ready = false;
+    timelineRange = { startDate: null, endDate: null };
+    pendingInitialViewport = null;
+    taskDragInProgress = false;
+    activeTaskDragSnapshot = null;
+    viewportRestoreVersion += 1;
+    renderDeferred = false;
+    pendingDateWrites.clear();
+    dateBatchWriteCount = 0;
 });
 </script>
 
