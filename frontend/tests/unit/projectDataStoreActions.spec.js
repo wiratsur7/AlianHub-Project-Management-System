@@ -150,6 +150,16 @@ describe('live task rooms (getTasksFromMongoDB)', () => {
         expect(store.state.projectData.mongoUpdatedTask.op).toBe('removed');
     });
 
+    it('uses the inserted document to update its group count when the socket event omits updatedFields', async () => {
+        await join();
+        store.state.projectData.tasks.p1.groupBy = { type: 0, items: [{ key: 'statusKey_st1', value: 'st1' }] };
+        store.state.projectData.tasks.p1.s1.found = { statusKey_st1: 0 };
+
+        socket.handlers.taskInsert({ fullDocument: parentTask('t1', { statusKey: 'st1' }) });
+
+        expect(listOf().found.statusKey_st1).toBe(1);
+    });
+
     it('drops a deleted task from the table too', async () => {
         await join();
         socket.handlers.taskInsert({ fullDocument: parentTask('t1') });
@@ -164,20 +174,46 @@ describe('live task rooms (getTasksFromMongoDB)', () => {
         expect(listOf().tasks[0].TaskName).toBe('replaced');
     });
 
-    it('leaves a previously joined list before joining another, and forgets its payloads', async () => {
-        store = build(makeSocket([]));
-        socket = makeSocket(['/ns#sock-1', 'project_sprint_sock-1_p1']);
+    it('replaces the legacy list room without removing the shared socket listeners', async () => {
+        socket = makeSocket();
         store = build(socket);
         seed();
         store.commit('projectData/setGetPaginatedTasksPayload', { op: 'add', data: { pid: 'p1', sprintId: 's1' } });
         store.commit('projectData/setGetTableTaskPayload', { op: 'add', data: { pid: 'p1', sprintId: 's1' } });
         await store.dispatch('projectData/getTasksFromMongoDB', { pid: 'p1', sprintId: 's1', showAllTasks: true });
+        await store.dispatch('projectData/getTasksFromMongoDB', { pid: 'p1', sprintId: 's2', showAllTasks: true });
 
         expect(store.state.projectData.getPaginatedTaskPayload).toEqual([]);
         expect(store.state.projectData.getTableTaskPayload).toEqual([]);
-        expect(socket.emit).toHaveBeenCalledWith('leaveProjectSprintForTask', 'project_sprint_sock-1_p1');
-        socket.handlers.taskInsert({ fullDocument: parentTask('t1') });
-        expect(listOf().tasks).toHaveLength(1);
+        expect(socket.emit.mock.calls.filter(([event]) => event === 'joinProjectSprintForTask')).toHaveLength(2);
+        expect(socket.emit).toHaveBeenCalledWith('leaveProjectSprintForTask', 'project_sprint_p1_s1**sock-1');
+        expect(socket.off).not.toHaveBeenCalled();
+    });
+
+    it('subscribes all Board list rooms and applies each membership delivery once', async () => {
+        socket = makeSocket();
+        store = build(socket);
+        seed();
+        store.commit('projectData/mutateTypesenseTasks', { pid: 'p1', sprintId: 's2', nextPage: {}, found: {}, data: null });
+        const shared = parentTask('t1', { extraLists: [{ projectId: 'p1', sprintId: 's2', name: 'Second' }] });
+        await store.dispatch('projectData/subscribeBoardTaskRooms', {
+            ownerKey: 'board-1', pid: 'p1', listIds: ['s1', 's2'], userId: 'u1', showAllTasks: true,
+            groupBy: { type: 0, items: [] }
+        });
+
+        const joins = socket.emit.mock.calls.filter(([event]) => event === 'joinProjectSprintForTask');
+        expect(joins.map(([, payload]) => payload.sprintId).sort()).toEqual(['s1', 's2']);
+        socket.handlers.taskInsert({ eventId: 'e1', membershipSprintId: 's1', fullDocument: shared });
+        socket.handlers.taskInsert({ eventId: 'e1', membershipSprintId: 's2', fullDocument: shared });
+        socket.handlers.taskInsert({ eventId: 'e1', membershipSprintId: 's2', fullDocument: shared });
+
+        expect(store.state.projectData.tasks.p1.s1.tasks.map((row) => row._id)).toEqual(['t1']);
+        expect(store.state.projectData.tasks.p1.s2.tasks.map((row) => row._id)).toEqual(['t1']);
+        expect(store.state.projectData.getTaskSnapShotPayload.sprintIds).toEqual(['s1', 's2']);
+
+        await store.dispatch('projectData/unsubscribeBoardTaskRooms', { ownerKey: 'board-1' });
+        expect(socket.emit.mock.calls.filter(([event]) => event === 'leaveProjectSprintForTask')).toHaveLength(2);
+        expect(store.state.projectData.getTaskSnapShotPayload).toEqual({});
     });
 
     it('asks only for the user own tasks when the view hides the rest', async () => {
@@ -222,7 +258,7 @@ describe('live task rooms (getTasksFromMongoDB)', () => {
         vi.useFakeTimers();
         await join();
         apiRequest.mockResolvedValue({ data: [] });
-        socket.handlers.taskUpdate({ fullDocument: parentTask('t1', { sprintId: 's2' }), updatedFields: { sprintId: 's2' } });
+        socket.handlers.taskUpdate({ eventId: 'move-1', membershipSprintId: 's1', fullDocument: parentTask('t1', { sprintId: 's2' }), updatedFields: { sprintId: 's2' } });
         await vi.advanceTimersByTimeAsync(900);
         expect(apiRequest).toHaveBeenCalledTimes(1);
         expect(apiRequest.mock.calls[0][1]).toContain('collection=sprints');
@@ -278,6 +314,32 @@ describe('paged task loading (getPaginatedTasks)', () => {
         expect(apiRequest.mock.calls[1][2].findQuery[2].$facet.result[0]).toEqual({ $skip: 2 });
         expect(listOf().tasks.map((t) => t._id)).toEqual(['t1', 't2', 't3']);
         expect(listOf().index.statusKey_st1).toBe(3);
+    });
+
+    it('loads every page when requested by Gantt', async () => {
+        const firstPage = Array.from({ length: 35 }, (_, index) => parentTask(`t${index + 1}`));
+        const lastPage = Array.from({ length: 5 }, (_, index) => parentTask(`t${index + 36}`));
+        apiRequest.mockReturnValueOnce(page(firstPage, 40)).mockReturnValueOnce(page(lastPage, 40));
+
+        const result = await load({ allPages: true });
+
+        expect(result.responseData).toHaveLength(40);
+        expect(apiRequest).toHaveBeenCalledTimes(2);
+        expect(apiRequest.mock.calls[1][2].findQuery[2].$facet.result[0]).toEqual({ $skip: 35 });
+        expect(listOf().tasks).toHaveLength(40);
+        expect(listOf().index.statusKey_st1).toBe(40);
+    });
+
+    it('continues loading all pages from the stored cursor', async () => {
+        apiRequest.mockReturnValueOnce(page([parentTask('t1'), parentTask('t2')], 4));
+        await load();
+        apiRequest.mockReturnValueOnce(page([parentTask('t3'), parentTask('t4')], 4));
+
+        await load({ allPages: true });
+
+        expect(apiRequest).toHaveBeenCalledTimes(2);
+        expect(apiRequest.mock.calls[1][2].findQuery[2].$facet.result[0]).toEqual({ $skip: 2 });
+        expect(listOf().tasks.map((task) => task._id)).toEqual(['t1', 't2', 't3', 't4']);
     });
 
     it('starts at the row the List says when it counted rows itself', async () => {

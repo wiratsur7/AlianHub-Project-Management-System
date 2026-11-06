@@ -26,7 +26,7 @@ import * as env from '@/config/env';
 import { mutateUpdateFirebaseTasks } from '@/store/ProjectData/mutations';
 import { statusChipStyle } from '@/utils/statusChipColors';
 import {
-    MAX_PROJECTS, columnFor, keepOtherRows, otherProjectIds, otherRowsRequest, placeOnBoard, readOnlyCard, useOtherProjectRows
+    MAX_LIST_IDS_PER_REQUEST, MAX_PROJECTS, columnFor, keepOtherRows, otherProjectIds, otherRowsRequest, placeOnBoard, readOnlyCard, useOtherProjectRows
 } from '@/views/Projects/composables/otherProjectRows';
 import OtherProjectRows from '@/views/Projects/components/OtherProjectRows.vue';
 import en from '@/locales/en.js';
@@ -38,6 +38,7 @@ const HERE_PROJECT = '6f0000000000000000000a01';
 const THERE_PROJECT = '6f0000000000000000000a02';
 const THIRD_PROJECT = '6f0000000000000000000a03';
 const HERE = '6f0000000000000000000b01';
+const HERE_SECOND = '6f0000000000000000000b03';
 const THERE = '6f0000000000000000000b02';
 
 const IN_REVIEW = { key: 7, name: 'In review', type: 'active', bgColor: '#7c3aed35', textColor: '#7c3aed' };
@@ -70,7 +71,7 @@ const storeWith = (projects = [{ _id: HERE_PROJECT }, { _id: THERE_PROJECT }]) =
 });
 
 const Host = defineComponent({
-    props: { project: { type: Object, default: null }, listId: { type: String, default: '' } },
+    props: { project: { type: Object, default: null }, listId: { type: [String, Array], default: '' } },
     setup(props) { return { other: useOtherProjectRows(toRef(props, 'project'), toRef(props, 'listId')) }; },
     render: () => null
 });
@@ -104,6 +105,7 @@ describe('what the list asks for', () => {
     it('asks the Everything read for the list, in those projects only', () => {
         expect(otherRowsRequest(HERE, [THERE_PROJECT])).toEqual({ filter: { sprintIds: [HERE], projectIds: [THERE_PROJECT] }, limit: 100 });
         expect(otherRowsRequest(HERE, [THERE_PROJECT], 'next')).toMatchObject({ cursor: 'next' });
+        expect(otherRowsRequest(Array.from({ length: MAX_LIST_IDS_PER_REQUEST + 1 }, (_, index) => `l${index}`), [THERE_PROJECT]).filter.sprintIds).toHaveLength(MAX_LIST_IDS_PER_REQUEST);
     });
 
     it('sends that request once the list is on screen', async () => {
@@ -114,6 +116,28 @@ describe('what the list asks for', () => {
         expect(sent.calls).toEqual([{ method: 'post', url: env.V2_TASKS_EVERYTHING, body: otherRowsRequest(HERE, [THERE_PROJECT]) }]);
         expect(wrapper.vm.other.rows.value.map((row) => row._id)).toEqual(['t1']);
         expect(wrapper.vm.other.projects.value[THERE_PROJECT].ProjectName).toBe('Operations');
+    });
+
+    it('requests a scoped list batch and expands one foreign task into each matching membership', async () => {
+        const shared = rowThere('shared', {
+            extraLists: [
+                { projectId: HERE_PROJECT, sprintId: HERE, name: 'Launch' },
+                { projectId: HERE_PROJECT, sprintId: HERE_SECOND, name: 'Planning' }
+            ]
+        });
+        sent.answer = () => answer([shared]);
+        const wrapper = host(storeWith(), {
+            project: { _id: HERE_PROJECT },
+            listId: [{ id: HERE, name: 'Launch' }, { _id: HERE_SECOND, name: 'Planning' }]
+        });
+        await flushPromises();
+
+        expect(sent.calls).toHaveLength(1);
+        expect(sent.calls[0].body.filter.sprintIds).toEqual([HERE, HERE_SECOND]);
+        expect(wrapper.vm.other.rows.value.map((row) => [row.boardListId, row.boardListName, row.boardListKey])).toEqual([
+            [HERE, 'Launch', `${HERE}::shared`],
+            [HERE_SECOND, 'Planning', `${HERE_SECOND}::shared`]
+        ]);
     });
 
     it('asks nothing when the person has no other project, or no list is open', async () => {
@@ -246,6 +270,21 @@ describe('a row from another project', () => {
         expect(mark.attributes('title')).toBe('Lives in Ops queue, in Operations');
     });
 
+    it('labels an external membership in the destination list', () => {
+        const row = { ...rowThere('t1'), boardListId: HERE_SECOND, boardListName: 'Planning', boardListCount: 2, boardListKey: `${HERE_SECOND}::t1` };
+        const wrapper = section({ rows: [row] });
+
+        expect(wrapper.find('[data-board-list]').text()).toBe('Planning');
+        expect(wrapper.find('[data-board-list]').attributes('title')).toBe('Planning');
+    });
+
+    it('labels an external membership on an aggregate Board even when its scope has one List', () => {
+        const row = { ...rowThere('t1'), boardListId: HERE, boardListName: 'Launch', boardListCount: 1, boardListKey: `${HERE}::t1` };
+        const wrapper = section({ rows: [row], aggregateMode: true });
+
+        expect(wrapper.find('[data-board-list]').text()).toBe('Launch');
+    });
+
     it('opens the task panel on the project it lives in', async () => {
         const wrapper = section();
 
@@ -311,7 +350,7 @@ describe('the views that show them', () => {
 
         expect(view).toContain('useOtherProjectRows(project');
         expect(view).toContain('placeOnBoard(');
-        expect(board).toMatch(/<OtherProjectRows\s+as="card"/);
+        expect(board).toMatch(/<OtherProjectRows[\s\S]*?as="card"/);
         expect(board).toContain('data-other-project-column');
     });
 });

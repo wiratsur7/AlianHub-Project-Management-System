@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const {
     joinRoom,
     leaveRoom,
@@ -20,13 +21,30 @@ function setEventName(type) {
 
 const listRoom = (projectId, sprintId) => `project_sprint_${projectId}_${sprintId}`;
 
+const listMemberships = (changeData) => {
+    const data = changeData?.data || {};
+    const memberships = [
+        { projectId: data.ProjectID, sprintId: data.sprintId },
+        ...extraListsOf(data),
+        ...(Array.isArray(changeData?.leftLists) ? changeData.leftLists : []),
+    ];
+    const seen = new Set();
+    return memberships.filter((entry) => {
+        if (!entry?.projectId || !entry?.sprintId) return false;
+        const key = `${String(entry.projectId)}:${String(entry.sprintId)}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+};
+
 /* The rooms of the lists a task was added to, and of the ones this change took it out of
  * (`leftLists`, set by the writer), so a removal reaches the list it left. A conversation row is in no list but its own. */
 const extraListRooms = (changeData) => {
     if (changeData.data.mainChat === true) return [];
     const home = String(changeData.data.sprintId);
-    const entries = [...extraListsOf(changeData.data), ...(Array.isArray(changeData.leftLists) ? changeData.leftLists : [])];
-    return [...new Set(entries.filter((entry) => entry && String(entry.sprintId) !== home).map((entry) => listRoom(entry.projectId, entry.sprintId)))];
+    const entries = listMemberships(changeData).filter((entry) => String(entry.sprintId) !== home);
+    return [...new Set(entries.map((entry) => listRoom(entry.projectId, entry.sprintId)))];
 };
 
 /* A task event goes to the list it lives in, to its own detail pane, to its parent's, and to the lists it was added to. */
@@ -41,27 +59,41 @@ const roomsOf = (changeData) => {
     return [...new Map(rooms.map((room) => [room.roomName, room])).values()];
 };
 
+const membershipSprintIdForRoom = (changeData, roomName) => {
+    if (!String(roomName || '').startsWith('project_sprint_')) return undefined;
+    const prefix = String(roomName).split('**')[0];
+    const membership = listMemberships(changeData).find((entry) => listRoom(entry.projectId, entry.sprintId) === prefix);
+    return membership ? String(membership.sprintId) : undefined;
+};
+
 const deliver = (room, changeData, eventName, emitData) => {
+    const membershipSprintId = membershipSprintIdForRoom(changeData, room.roomName);
+    const roomData = {
+        ...emitData,
+        ...(membershipSprintId ? { membershipSprintId } : {}),
+    };
     if (room.isUserIdCheck) {
         const userId = room.namespace.name.split('_').pop();
         if (![].concat(changeData.data.AssigneeUserId || []).map(String).includes(userId)) return;
-        room.namespace.to(room.roomName).emit(eventName, emitData);
+        room.namespace.to(room.roomName).emit(eventName, roomData);
         return;
     }
     if (!room.roomName.includes('taskDetail_')) {
-        room.namespace.to(room.roomName).emit(eventName, emitData);
+        room.namespace.to(room.roomName).emit(eventName, roomData);
         return;
     }
     // A detail pane also hears the subtasks of the task it shows, marked as such.
     const shownTaskId = room.roomName.split('**')[0].split('_')[1];
     const own = String(changeData.data._id) === shownTaskId;
-    room.namespace.to(room.roomName).emit(`taskDetail_${eventName}`, own ? emitData : { ...emitData, isSubTaskUpdate: true });
+    room.namespace.to(room.roomName).emit(`taskDetail_${eventName}`, own ? roomData : { ...roomData, isSubTaskUpdate: true });
 };
 
 const relayTaskChange = async (changeData, includeUpdatedFields) => {
     const eventName = setEventName(changeData.type);
+    const eventId = crypto.randomUUID();
     const emitData = {
         fullDocument: changeData.data,
+        eventId,
         ...(includeUpdatedFields && { updatedFields: changeData.updatedFields }),
         ...(changeData.leftBecause && { leftBecause: changeData.leftBecause }),
     };

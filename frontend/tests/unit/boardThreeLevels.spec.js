@@ -53,10 +53,10 @@ const stored = (id) => server.tasks.find((task) => task._id === id);
 let wrapper;
 const openedTasks = vi.fn();
 
-async function openBoard() {
+async function openBoard(sprints = [{ id: SPRINT, name: 'List', projectId: PID, tasks: 6, deletedStatusKey: 0 }]) {
     wrapper = mount(BoardView, {
         attachTo: document.body,
-        props: { grouped: 0, sprints: [{ id: SPRINT, name: 'List', projectId: PID, tasks: 6, deletedStatusKey: 0 }], projectData: PROJECT },
+        props: { grouped: 0, sprints, projectData: PROJECT },
         global: {
             plugins: [Store],
             mocks: { $t: (...args) => i18n.global.t(...args) },
@@ -172,6 +172,59 @@ describe('a card and the subtasks under it', () => {
     });
 });
 
+describe('a project Board across its Lists', () => {
+    it('loads each List and renders a shared task once per membership with route order and counts', async () => {
+        const base = threeLevels()[0];
+        const shared = { ...base, _id: 't3', TaskName: 'Shared membership', TaskKey: 'QA-t3', groupByStatusIndex: 3,
+            extraLists: [{ projectId: PID, sprintId: 's2', name: 'List B' }] };
+        const secondHome = { ...base, _id: 't4', TaskName: 'Second home', TaskKey: 'QA-t4', groupByStatusIndex: 4,
+            sprintId: 's2', sprintArray: { id: 's2', name: 'List B' }
+        };
+        resetServer([...threeLevels(), shared, secondHome]);
+
+        await openBoard([
+            { id: SPRINT, name: 'List A', projectId: PID, tasks: 3, deletedStatusKey: 0 },
+            { id: 's2', name: 'List B', projectId: PID, tasks: 2, deletedStatusKey: 0 }
+        ]);
+
+        const membershipNames = wrapper.findAll('.board-membership-mark').map((element) => element.text());
+        expect(membershipNames).toEqual(['List A', 'List A', 'List A', 'List B', 'List B']);
+        expect(cardNames().filter((name) => name.includes('Shared membership'))).toHaveLength(2);
+        expect(wrapper.find('.task-count').text()).toBe('5');
+        expect(server.calls.filter((query) => query[0]?.$match?.objId?.sprintId).map((query) => query[0].$match.objId.sprintId).sort()).toEqual(['s1', 's2']);
+    });
+
+    it('refreshes aggregate group counts after a socket deletes an unloaded task', async () => {
+        const base = threeLevels()[0];
+        const extraTasks = Array.from({ length: 34 }, (_, at) => ({
+            ...base,
+            _id: `t${at + 3}`,
+            TaskName: `Remote ${at + 3}`,
+            TaskKey: `QA-t${at + 3}`,
+            groupByStatusIndex: at + 3,
+            subTasks: 0,
+            subtaskArray: []
+        }));
+        const unloaded = extraTasks[extraTasks.length - 1];
+        resetServer([...threeLevels(), ...extraTasks]);
+
+        await openBoard([{ id: SPRINT, name: 'List', projectId: PID, tasks: 36, deletedStatusKey: 0 }]);
+        const bucket = Store.state.projectData.tasks[PID][SPRINT];
+        expect(bucket.found.statusKey_1).toBe(36);
+        expect(bucket.tasks.some((task) => task._id === unloaded._id)).toBe(false);
+
+        server.tasks = server.tasks.filter((task) => task._id !== unloaded._id);
+        Store.commit('projectData/mutateUpdateFirebaseTasks', {
+            snap: {}, op: 'removed', pid: PID, sprintId: SPRINT, data: unloaded, updatedFields: {}, membershipScoped: true
+        });
+        await settle(500);
+
+        expect(bucket.found.statusKey_1).toBe(35);
+        expect(wrapper.find('.task-count').text()).toBe('35');
+        expect(server.calls.some((query) => Object.keys(query[1]?.$facet || {}).some((key) => key.startsWith('g')))).toBe(true);
+    });
+});
+
 describe('adding a subtask from the Board', () => {
     beforeEach(async () => { await openBoard(); });
 
@@ -235,7 +288,12 @@ describe('dragging a card', () => {
         done.vm.$emit('change', { added: { element: card, newIndex: 0 } });
         await settle();
         expect(movedByGroup.mock.calls.map(([task]) => task._id)).toEqual(['t1']);
-        expect(server.posts.map((post) => post.body?.taskId).filter(Boolean)).toEqual(['t1']);
+        const [task, target, group] = movedByGroup.mock.calls[0];
+        expect(task).toMatchObject({ _id: 't1', sprintId: SPRINT });
+        expect(task).not.toHaveProperty('boardListId');
+        expect(target.name).toBe('Done');
+        expect(group).toBe(0);
+        expect(server.posts.map((post) => post.body?.taskId).filter(Boolean)).toEqual([]);
     });
 });
 

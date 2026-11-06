@@ -418,6 +418,7 @@ export const mutateUpdateFirebaseTasks = (state, payload) => {
     if(touchesOtherProjects(data, pid, op === "modified" ? payload.updatedFields : null)) state.otherProjectChanges = (state.otherProjectChanges || 0) + 1;
     moveHomeCounts(state, payload);
     applyTaskChange(state, payload, sprintId);
+    if(payload.membershipScoped) return;
     if(!data?._id || !["modified", "removed"].includes(op)) return;
     otherHolders(state.tasks[pid], data, pid, sprintId).forEach((holder) => {
         if(holder.shown) applyTaskChange(state, payload, holder.sprintId);

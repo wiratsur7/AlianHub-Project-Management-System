@@ -41,18 +41,48 @@ function childCounts(rows) {
     return [...byParent.values()];
 }
 
-function answer(stages) {
-    const rows = server.tasks.filter((task) => matches(task, stage(stages, '$match'))).sort(inOrder);
+function sortRows(rows, fields = {}) {
+    const keys = Object.entries(fields);
+    return [...rows].sort((a, b) => {
+        for (const [field, direction] of keys) {
+            const left = a[field] ?? null;
+            const right = b[field] ?? null;
+            if (left === right) continue;
+            if (left === null) return -1 * direction;
+            if (right === null) return direction;
+            if (left < right) return -1 * direction;
+            if (left > right) return direction;
+        }
+        return 0;
+    });
+}
+
+function runFacetBranch(rows, pipeline) {
+    let result = [...rows];
+    for (const item of pipeline || []) {
+        if ('$match' in item) result = result.filter((task) => matches(task, item.$match));
+        else if ('$sort' in item) result = sortRows(result, item.$sort);
+        else if ('$skip' in item) result = result.slice(item.$skip);
+        else if ('$limit' in item) result = result.slice(0, item.$limit);
+        else if ('$count' in item) return result.length ? [{ [item.$count]: result.length }] : [];
+    }
+    return result.map(copy);
+}
+
+function answer(stages, inList) {
+    const rootMatch = stage(stages, '$match');
+    const rows = server.tasks.filter((task) => {
+        if (matches(task, rootMatch)) return true;
+        if (!inList || !task.extraLists?.some((entry) => String(entry.sprintId) === String(inList))) return false;
+        return matches({ ...task, sprintId: inList }, rootMatch);
+    }).sort(inOrder);
     const facet = stage(stages, '$facet');
     if (facet?.result) {
         const skip = stage(facet.result, '$skip') || 0;
         return [{ result: rows.slice(skip, skip + 35).map(copy), count: rows.length ? [{ count: rows.length }] : [] }];
     }
     if (facet) {
-        return [Object.fromEntries(Object.entries(facet).map(([key, pipeline]) => {
-            const count = rows.filter((task) => matches(task, stage(pipeline, '$match'))).length;
-            return [key, count ? [{ count }] : []];
-        }))];
+        return [Object.fromEntries(Object.entries(facet).map(([key, pipeline]) => [key, runFacetBranch(rows, pipeline)]))];
     }
     if (stage(stages, '$group')) return childCounts(rows);
     const skip = stage(stages, '$skip') || 0;
@@ -67,7 +97,7 @@ export const apiRequest = vi.fn((method, url, body) => {
         return Promise.resolve({ status: 200, data: { status: true } });
     }
     server.calls.push(stages);
-    return Promise.resolve({ status: 200, data: answer(stages) });
+    return Promise.resolve({ status: 200, data: answer(stages, body?.inList) });
 });
 
 const readsOf = (parentId) => (stages) => stage(stages, '$match')?.ParentTaskId === parentId;

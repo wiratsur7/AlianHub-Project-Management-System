@@ -32,7 +32,13 @@
             </div>
         </template>
         <template v-else>
-            <template v-if="processedBoardData.length && sprints?.length">
+            <div v-if="boardLoadFailures.length" class="board-load-failure" role="status">
+                <span>{{ $t('Everything.group_failed') }}</span>
+                <button type="button" class="ah-btn ah-btn--secondary ah-btn--sm" :disabled="isRetryingBoardGroups" @click="retryFailedBoardGroups">
+                    {{ $t('Everything.retry') }}
+                </button>
+            </div>
+            <template v-if="processedBoardData.length && boardLists.length">
                 <ListBulkBar v-if="projectData?._id" :project="projectData" />
                 <div class="board-card-fields">
                     <ListSortControl :sort="boardSort.sort.value" :options="sortOptions" :dragNote="false" @key="boardSort.setKey" @dir="boardSort.setDir" />
@@ -45,12 +51,30 @@
                     />
                     <ViewDensityControl :model-value="density" @update:model-value="setDensity" />
                 </div>
-                <KanbanBoard :data="processedBoardData" :group="grouped" :sprintId="sprintId" :otherRows="otherOnBoard" :otherProjects="otherRows.projects.value" :otherTruncated="otherRowsShown && otherRows.truncated.value" />
+                <KanbanBoard
+                    :data="processedBoardData"
+                    :group="grouped"
+                    :sprintId="sprintId"
+                    :aggregateMode="aggregateMode"
+                    :boardLists="boardLists"
+                    :loadBoardGroupPages="loadBoardGroupPages"
+                    :otherRows="otherOnBoard"
+                    :otherProjects="otherRows.projects.value"
+                    :otherTruncated="otherRowsShown && otherRows.truncated.value"
+                />
             </template>
             <template v-else>
                 <div class="board-view__empty">
+                    <BoardViewTaskCreate
+                        v-if="creatingFirstTask && aggregateMode && emptyCreateGroup && boardLists.length"
+                        :data="emptyCreateGroup"
+                        :sprintId="defaultBoardListId"
+                        :allowedSprintIds="boardListIds"
+                        :groupValue="grouped"
+                        @toggle="creatingFirstTask = false"
+                    />
                     <CreateTask
-                        v-if="creatingFirstTask"
+                        v-else-if="creatingFirstTask && !aggregateMode"
                         :sprint="sprints[0]"
                         :assigneeOptions="project?.AssigneeUserId"
                         :groupBy="grouped"
@@ -75,16 +99,16 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch, inject, provide, defineProps, defineEmits } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount, watch, inject, provide, defineProps, defineEmits, getCurrentInstance } from 'vue';
 import { useStore } from 'vuex';
 import EmptyState from '@/components/atom/EmptyState/EmptyState.vue';
 import CreateTask from '@/components/atom/CreateTask/CreateTask.vue';
 import { useCustomComposable } from '@/composable';
 import { markFirstRunStep, FIRST_RUN_STEPS } from '@/composable/firstRunProgress';
-import isEqual from 'lodash/isEqual';
 
 // Components
 import KanbanBoard from '@/views/Projects/Kanban/KanbanBoard.vue';
+import BoardViewTaskCreate from '@/views/Projects/Kanban/BoardViewTaskCreate.vue';
 import ListBulkBar from '@/views/Projects/ListView/ListBulkBar.vue';
 import { taskInGroup } from '@/views/Projects/ListView/listFilter';
 import { inList } from '@/store/ProjectData/listMembership';
@@ -121,19 +145,15 @@ const props = defineProps({
 defineEmits(['change']);
 
 // --- Store & Injected State ---
-const { getters } = useStore();
-const { groupBy, getGroupCounts } = taskListHelper();
+const { getters, dispatch } = useStore();
+const { groupBy, getGroupCounts, getBoardGroupPages } = taskListHelper();
 const showArchiveVar = inject("showArchived");
 const searchedTask = inject('searchedTask');
 const project = inject('selectedProject');
+const userId = inject('$userId', ref(''));
 const { emptyTitleKey, emptyMessageKey, emptySentenceKey } = useTaskEmptyState(project);
 const { checkPermission } = useCustomComposable();
 const creatingFirstTask = ref(false);
-const canCreateFirstTask = computed(() => Boolean(props.sprints?.length)
-    && !showArchiveVar.value
-    && !searchedTask.value
-    && checkPermission('task.task_create', project.value?.isGlobalPermission) === true
-    && checkPermission('task.task_list', project.value?.isGlobalPermission) === true);
 
 const customFields = useProjectCustomFields(project, { archived: showArchiveVar });
 const cardCatalogue = computed(() => columnCatalogue('board', { fields: customFields.defs.value }));
@@ -161,43 +181,162 @@ const sortContext = computed(() => ({
 const isLoading = ref(true);
 const internalGroupedTasks = ref([]);
 const sprintId = ref(null);
-
-// A skeleton that redraws at a different size on every load reads as movement
-// rather than as the shape of what is coming.
-const SKELETON_CARDS = 3;
-const skeletonColumns = computed(() => {
-    const groups = internalGroupedTasks.value[0]?.items?.length
-        || (props.grouped === 0 ? project.value?.taskStatusData?.length : 0);
-    return Math.min(Math.max(Number(groups) || 3, 2), 5);
-});
+const boardLoadFailures = ref([]);
+const isRetryingBoardGroups = ref(false);
+const boardLoadRun = ref(0);
+const BOARD_COUNT_SETTLE_MS = 400;
+let boardGroupCountTimer = null;
+const aggregateMode = computed(() => !route.params.sprintId);
+const boardLists = computed(() => (props.sprints || [])
+    .flatMap((sprint) => sprint?.archivedSprintList ? Object.values(sprint.archivedSprintList) : [sprint])
+    .filter((sprint) => sprint && !sprint.isFolder && !sprint.isFolderSprint && !sprint.sprintsObj && !sprint.archivedSprintList)
+    .map((sprint) => {
+        const id = String(sprint.id || sprint._id || '');
+        return id ? { ...sprint, id, boardListId: id, boardListName: sprint.name || '' } : null;
+    })
+    .filter(Boolean)
+    .filter((list, index, all) => all.findIndex((candidate) => candidate.id === list.id) === index));
+const boardListIds = computed(() => boardLists.value.map((list) => list.id));
+const boardListOrder = computed(() => new Map(boardListIds.value.map((id, index) => [id, index])));
+const boardScopeKey = computed(() => boardListIds.value.join(','));
+const defaultBoardListId = computed(() => boardListIds.value[0] || '');
+const boardOwnerKey = `board:${getCurrentInstance()?.uid ?? Math.random().toString(36).slice(2)}`;
+const showAllTasks = computed(() => project.value?.isGlobalPermission === false
+    ? checkPermission('task.show_tasks', project.value?.isGlobalPermission)
+    : true);
 
 // --- Computed Properties ---
 const currentCompany = computed(() => getters["settings/selectedCompany"]);
 const allProjectTasks = computed(() => getters["projectData/tasks"] || {});
 const searchedTasksData = computed(() => getters['projectData/searchedTasks'] || []);
+const boardCountsStaleSignature = computed(() => {
+    const pid = String(project.value?._id || '');
+    return boardLists.value.map((list) => `${list.id}:${Number(allProjectTasks.value[pid]?.[list.id]?.countsStale) || 0}`).join('|');
+});
+const listIdOf = (sprint) => String(sprint?.id || sprint?._id || '');
+const groupSignature = (group) => JSON.stringify([
+    group?.searchKey,
+    group?.searchValue,
+    group?.customFieldId || '',
+    Boolean(group?.agentWork),
+    Boolean(group?.noAgent)
+]);
+
+const boardGroupDefinitions = computed(() => {
+    const groups = new Map();
+    (internalGroupedTasks.value || []).forEach((sprint) => {
+        const id = listIdOf(sprint);
+        const list = boardLists.value.find((item) => item.id === id);
+        (sprint?.items || []).forEach((item) => {
+            const signature = groupSignature(item);
+            if (!groups.has(signature)) {
+                groups.set(signature, { ...item, boardListItems: [] });
+            }
+            groups.get(signature).boardListItems.push({
+                sprintId: id,
+                boardListId: id,
+                boardListName: list?.name || sprint?.name || '',
+                item
+            });
+        });
+    });
+    return [...groups.values()];
+});
+
+const emptyCreateGroup = computed(() => boardGroupDefinitions.value[0] || internalGroupedTasks.value[0]?.items?.[0] || null);
+const canCreateFirstTask = computed(() => Boolean(boardLists.value.length)
+    && !showArchiveVar.value
+    && !searchedTask.value
+    && (!aggregateMode.value || Boolean(emptyCreateGroup.value))
+    && checkPermission('task.task_create', project.value?.isGlobalPermission) === true
+    && checkPermission('task.task_list', project.value?.isGlobalPermission) === true);
+
+const boardSubscriptionKey = computed(() => [
+    String(project.value?._id || ''),
+    aggregateMode.value ? 'aggregate' : 'list',
+    boardListIds.value.join(','),
+    String(props.grouped),
+    String(showAllTasks.value),
+    String(userId.value || ''),
+    JSON.stringify(boardGroupDefinitions.value.map((group) => groupSignature(group)))
+].join(':'));
+
+// A skeleton that redraws at a different size on every load reads as movement
+// rather than as the shape of what is coming.
+const SKELETON_CARDS = 3;
+const skeletonColumns = computed(() => {
+    const groups = boardGroupDefinitions.value.length
+        || (props.grouped === 0 ? project.value?.taskStatusData?.length : 0);
+    return Math.min(Math.max(Number(groups) || 3, 2), 5);
+});
+
+function taskSourceRows() {
+    const listScope = boardLists.value;
+    if (!listScope.length || !project.value?._id) return [];
+
+    if (searchedTask.value) {
+        if (!searchedTasksData.value.length) return [];
+        const occurrences = [];
+        const seen = new Set();
+        searchedTasksData.value.forEach((task) => {
+            listScope.forEach((list) => {
+                if (!inList(task, list.id)) return;
+                const key = `${task._id}:${list.id}`;
+                if (seen.has(key)) return;
+                seen.add(key);
+                occurrences.push(aggregateMode.value
+                    ? { ...task, boardListId: list.id, boardListName: list.name, boardMembershipKey: key }
+                    : task);
+            });
+        });
+        return occurrences;
+    }
+
+    if (aggregateMode.value) {
+        const occurrences = [];
+        const seen = new Set();
+        listScope.forEach((list) => {
+            const rows = allProjectTasks.value[project.value._id]?.[list.id]?.tasks || [];
+            rows.forEach((task) => {
+                if (!inList(task, list.id)) return;
+                const key = `${task._id}:${list.id}`;
+                if (seen.has(key)) return;
+                seen.add(key);
+                occurrences.push({ ...task, boardListId: list.id, boardListName: list.name, boardMembershipKey: key });
+            });
+        });
+        return occurrences;
+    }
+
+    const currentList = listScope[0];
+    return allProjectTasks.value[project.value._id]?.[currentList.id]?.tasks || [];
+}
 
 // Determine the source task array based on whether a search is active
-const taskSourceArray = computed(() => {
-    if (searchedTask.value && searchedTasksData.value.length > 0) {
-        const currentSprintId = props.sprints[0]?.id;
-        if (!currentSprintId) return [];
-        return searchedTasksData.value.filter(task => inList(task, currentSprintId));
-    } else if (!searchedTask.value && project.value?._id && props.sprints[0]?.id) {
-        return allProjectTasks.value[project.value._id]?.[props.sprints[0].id]?.tasks || [];
+const taskSourceArray = computed(taskSourceRows);
+
+function sortGroupRows(rows, indexName) {
+    if (!aggregateMode.value) {
+        return rows.sort((a, b) => a[indexName] - b[indexName]);
     }
-    return [];
-});
+    rows.sort((a, b) => {
+        const listDelta = (boardListOrder.value.get(String(a?.boardListId || '')) ?? Number.MAX_SAFE_INTEGER)
+            - (boardListOrder.value.get(String(b?.boardListId || '')) ?? Number.MAX_SAFE_INTEGER);
+        if (listDelta) return listDelta;
+        return Number(a?.[indexName] ?? 0) - Number(b?.[indexName] ?? 0);
+    });
+    return rows;
+}
 
 // The core logic: Computed property that processes tasks based on grouping
 const processedBoardData = computed(() => {
 
-    if (!internalGroupedTasks.value[0]?.items || !taskSourceArray.value) {
+    if (!boardGroupDefinitions.value.length || !taskSourceArray.value) {
         return [];
     }
 
-    const groupDefinitions = internalGroupedTasks.value[0].items;
+    const groupDefinitions = boardGroupDefinitions.value;
     const sourceTasks = taskSourceArray.value;
-    const currentSprintId = internalGroupedTasks.value[0].id;
     const filteredSourceTasks = sourceTasks.filter(task => (showArchiveVar.value ? task?.deletedStatusKey : !task?.deletedStatusKey));
 
     return groupDefinitions.map(group => {
@@ -206,25 +345,27 @@ const processedBoardData = computed(() => {
         switch (group.searchKey) {
             case "DueDate":
                 tasksForGroup = filteredSourceTasks.filter(task => taskInGroup(task, group));
-                tasksForGroup.sort((a, b) => a.groupByDueDateIndex - b.groupByDueDateIndex);
+                sortGroupRows(tasksForGroup, 'groupByDueDateIndex');
                 break;
             case "AssigneeUserId":
                 tasksForGroup = filteredSourceTasks.filter(task => taskInGroup(task, group));
-                tasksForGroup.sort((a, b) => a.groupByAssigneeIndex - b.groupByAssigneeIndex);
+                sortGroupRows(tasksForGroup, 'groupByAssigneeIndex');
                 break;
             case "statusKey":
                 tasksForGroup = filteredSourceTasks.filter(task => task.statusKey === group.searchValue);
-                tasksForGroup.sort((a, b) => a.groupByStatusIndex - b.groupByStatusIndex);
+                sortGroupRows(tasksForGroup, 'groupByStatusIndex');
                 break;
             case "Task_Priority":
                 tasksForGroup = filteredSourceTasks.filter(task => task.Task_Priority === group.searchValue);
-                tasksForGroup.sort((a, b) => a.groupByPriorityIndex - b.groupByPriorityIndex);
+                sortGroupRows(tasksForGroup, 'groupByPriorityIndex');
                 break;
             default:
                 tasksForGroup = filteredSourceTasks.filter(task => (group.customFieldId || group.agentWork ? taskInGroup(task, group) : task[group.searchKey] === group.searchValue));
                 break;
         }
         tasksForGroup = sortTasks(tasksForGroup, boardSort.sort.value, sortContext.value);
+        // Aggregate Board order is stable by route List, then by page order inside that List.
+        if (aggregateMode.value) sortGroupRows(tasksForGroup, group.indexName || 'groupByStatusIndex');
 
         // If subtasks don't need filtering here, remove this map.
         const processedTasks = tasksForGroup.map(task => {
@@ -237,13 +378,19 @@ const processedBoardData = computed(() => {
             return task;
         });
 
+        const currentSprintId = defaultBoardListId.value;
         sprintId.value = currentSprintId;
-
-        const dataKeys = allProjectTasks.value[project.value._id]?.[props.sprints[0].id]?.found;
+        const countKey = `${group.searchKey}_${group.searchValue}`;
+        const dataKeys = aggregateMode.value
+            ? Object.fromEntries([[countKey, group.boardListItems.reduce((total, source) => {
+                const found = allProjectTasks.value[project.value._id]?.[source.sprintId]?.found?.[countKey];
+                return total + (Number.isFinite(Number(found)) ? Number(found) : 0);
+            }, 0)]])
+            : allProjectTasks.value[project.value._id]?.[currentSprintId]?.found || {};
 
         return {
             ...group,
-            sprintId: currentSprintId,
+            sprintId: aggregateMode.value ? undefined : currentSprintId,
             tasksArray: processedTasks,
             disabled: group.dropDisabled || (group.searchKey === "DueDate" && ["Next", "Overdue", "No Due Date"].includes(group.name)),
             totalTaskCounts: dataKeys || {},
@@ -252,59 +399,228 @@ const processedBoardData = computed(() => {
 });
 
 /* A search or a filter is matched against this project's own data, which says nothing of a task that lives elsewhere. */
-const otherRows = useOtherProjectRows(project, computed(() => props.sprints[0]?.id || ''));
+const otherRows = useOtherProjectRows(project, boardLists);
 const otherRowsShown = computed(() => !searchedTask.value && !showArchiveVar.value);
 const otherOnBoard = computed(() => placeOnBoard(otherRowsShown.value ? otherRows.rows.value : [], processedBoardData.value));
 
-// Watch for changes in grouping type or sprints to regenerate the group structure
-watch([() => props.grouped, () => props.sprints,() => route?.params], ([newGroup, newSprints, newRouteParams], [oldGroup, oldSprints, oldRouteParams]) => {
-    if (project.value?._id && (newGroup !== oldGroup || !isEqual(newSprints, oldSprints))) {        
-        if((newRouteParams?.id !== oldRouteParams?.id) || (newRouteParams?.sprintId !== oldRouteParams?.sprintId) || (newRouteParams?.folderId !== oldRouteParams?.folderId)){
-            isLoading.value = true;
+const boardGroupBy = computed(() => ({
+    type: props.grouped,
+    items: boardGroupDefinitions.value.map((item) => ({
+        key: `${item.searchKey}_${item.searchValue}`,
+        value: item.searchValue,
+        name: item.matchName || item.name
+    }))
+}));
+
+const subscriptionLists = computed(() => boardLists.value.map((list) => list.id));
+let subscribedBoardKey = '';
+let boardSubscriptionRevision = 0;
+let boardViewUnmounted = false;
+function updateBoardSubscription(force = false) {
+    if (!aggregateMode.value || !project.value?._id || !subscriptionLists.value.length || !boardGroupDefinitions.value.length) {
+        if (subscribedBoardKey) {
+            boardSubscriptionRevision += 1;
+            dispatch('projectData/unsubscribeBoardTaskRooms', { ownerKey: boardOwnerKey }).catch(() => {});
+            subscribedBoardKey = '';
         }
-        groupBy(props.grouped, true, project.value, props.sprints, internalGroupedTasks, true, 'board', false, true, (resp) => {
-            internalGroupedTasks.value = resp;
-            isLoading.value = false;
-        });
+        return;
     }
-}, { deep: true });
+    if (!force && subscribedBoardKey === boardSubscriptionKey.value) return;
+    const nextKey = boardSubscriptionKey.value;
+    const revision = ++boardSubscriptionRevision;
+    subscribedBoardKey = nextKey;
+    dispatch('projectData/subscribeBoardTaskRooms', {
+        ownerKey: boardOwnerKey,
+        pid: project.value._id,
+        listIds: subscriptionLists.value,
+        userId: userId.value,
+        showAllTasks: showAllTasks.value,
+        groupBy: boardGroupBy.value,
+        currentView: 'tasks'
+    }).then(() => {
+        if (boardViewUnmounted || revision !== boardSubscriptionRevision || subscribedBoardKey !== nextKey) {
+            if (boardViewUnmounted || !aggregateMode.value) {
+                dispatch('projectData/unsubscribeBoardTaskRooms', { ownerKey: boardOwnerKey }).catch(() => {});
+            } else {
+                updateBoardSubscription(true);
+            }
+        }
+    }).catch((error) => {
+        if (subscribedBoardKey === nextKey) subscribedBoardKey = '';
+        console.error('ERROR in board task subscription: ', error);
+    });
+}
+
+async function loadBoardGroupPages(boardListItems, { firstPageOnly = false } = {}) {
+    const sources = Array.isArray(boardListItems) ? boardListItems : [];
+    const bucketsByList = new Map();
+    sources.forEach((source) => {
+        const sprintId = String(source?.sprintId || source?.boardListId || '');
+        if (!sprintId || !source?.item) return;
+        if (!bucketsByList.has(sprintId)) bucketsByList.set(sprintId, []);
+        bucketsByList.get(sprintId).push(source.item);
+    });
+    if (!bucketsByList.size || !project.value?._id) return { failed: [] };
+    const requestProjectId = String(project.value._id);
+    const requestScope = boardScopeKey.value;
+    const result = await getBoardGroupPages({
+        projectId: requestProjectId,
+        projectData: project.value,
+        buckets: [...bucketsByList].map(([sprintId, items]) => ({ sprintId, items })),
+        firstPageOnly,
+        fetchNew: true
+    });
+    if (requestProjectId !== String(project.value?._id || '') || requestScope !== boardScopeKey.value) return result;
+    if (result?.failed?.length) {
+        const merged = new Map();
+        [...boardLoadFailures.value, ...result.failed].forEach((failure) => {
+            const key = `${failure.sprintId}:${(failure.groupKeys || []).join(',')}`;
+            merged.set(key, failure);
+        });
+        boardLoadFailures.value = [...merged.values()];
+    }
+    return result;
+}
+
+function hasStaleBoardGroupCounts() {
+    const pid = String(project.value?._id || '');
+    return boardLists.value.some((list) => Number(allProjectTasks.value[pid]?.[list.id]?.countsStale) > 0);
+}
+
+function refreshBoardGroupCounts() {
+    const currentProject = project.value;
+    if (!aggregateMode.value || !currentProject?._id || !internalGroupedTasks.value.length) return Promise.resolve();
+    const projectId = String(currentProject._id);
+    return Promise.allSettled(internalGroupedTasks.value.map((sprint) => getGroupCounts({
+        projectId,
+        sprintId: listIdOf(sprint),
+        items: sprint.items || [],
+        projectData: currentProject
+    })));
+}
+
+function scheduleBoardGroupCountRefresh() {
+    const projectId = String(project.value?._id || '');
+    const scope = boardScopeKey.value;
+    clearTimeout(boardGroupCountTimer);
+    boardGroupCountTimer = setTimeout(() => {
+        boardGroupCountTimer = null;
+        if (boardViewUnmounted || projectId !== String(project.value?._id || '') || scope !== boardScopeKey.value) return;
+        refreshBoardGroupCounts();
+    }, BOARD_COUNT_SETTLE_MS);
+}
+
+async function retryFailedBoardGroups() {
+    if (isRetryingBoardGroups.value || !boardLoadFailures.value.length) return;
+    const failed = boardLoadFailures.value;
+    const requestProjectId = String(project.value?._id || '');
+    const requestScope = boardScopeKey.value;
+    const bucketsByList = new Map();
+    failed.forEach((failure) => {
+        const list = internalGroupedTasks.value.find((sprint) => listIdOf(sprint) === String(failure.sprintId));
+        const groupKeys = new Set(failure.groupKeys || []);
+        const items = (list?.items || []).filter((item) => {
+            const foundKey = `${item.searchKey}_${item.searchValue}`;
+            return !groupKeys.size || groupKeys.has(foundKey) || groupKeys.has(item.key);
+        });
+        const sprintId = String(failure.sprintId);
+        if (!bucketsByList.has(sprintId)) bucketsByList.set(sprintId, new Map());
+        items.forEach((item) => bucketsByList.get(sprintId).set(`${item.searchKey}_${item.searchValue}`, item));
+    });
+    const buckets = [...bucketsByList].map(([sprintId, items]) => ({ sprintId, items: [...items.values()] })).filter((bucket) => bucket.items.length);
+    if (!buckets.length) return;
+    isRetryingBoardGroups.value = true;
+    try {
+        const result = await getBoardGroupPages({
+            projectId: requestProjectId,
+            projectData: project.value,
+            buckets,
+            firstPageOnly: false,
+            fetchNew: true
+        });
+        if (requestProjectId === String(project.value?._id || '') && requestScope === boardScopeKey.value) {
+            boardLoadFailures.value = result?.failed || [];
+        }
+    } catch (error) {
+        console.error('ERROR retrying board task groups: ', error);
+    } finally {
+        isRetryingBoardGroups.value = false;
+    }
+}
+
+async function loadBoard({ showLoading = false } = {}) {
+    const run = ++boardLoadRun.value;
+    if (showLoading) isLoading.value = true;
+    if (!project.value?._id || !boardLists.value.length) {
+        internalGroupedTasks.value = [];
+        boardLoadFailures.value = [];
+        updateBoardSubscription();
+        isLoading.value = false;
+        return;
+    }
+    const loadSprints = aggregateMode.value ? boardLists.value : boardLists.value.slice(0, 1);
+    try {
+        await groupBy(props.grouped, true, project.value, loadSprints, internalGroupedTasks, true, 'board', false, true, (response, result = { failed: [] }) => {
+            if (run !== boardLoadRun.value) return;
+            internalGroupedTasks.value = response;
+            boardLoadFailures.value = result?.failed || [];
+            sprintId.value = defaultBoardListId.value || null;
+            updateBoardSubscription();
+            if (aggregateMode.value && hasStaleBoardGroupCounts()) scheduleBoardGroupCountRefresh();
+        }, { firstPageOnly: true, allSprints: aggregateMode.value });
+        if (run === boardLoadRun.value && props.grouped === AGENT_WORK_GROUP) {
+            await Promise.allSettled(internalGroupedTasks.value.map((sprint) => getGroupCounts({
+                projectId: project.value._id,
+                sprintId: listIdOf(sprint),
+                items: sprint.items || [],
+                projectData: project.value
+            })));
+        }
+    } catch (error) {
+        if (run === boardLoadRun.value) console.error('Error during board group load:', error);
+    } finally {
+        if (run === boardLoadRun.value && showLoading) {
+            setTimeout(() => { if (run === boardLoadRun.value) isLoading.value = false; }, 500);
+        } else if (run === boardLoadRun.value) {
+            isLoading.value = false;
+        }
+    }
+}
+
+// Watch for changes in grouping type or sprints to regenerate the group structure
+watch([() => props.grouped, boardScopeKey, () => `${route.name}:${route.params.id || ''}:${route.params.folderId || ''}:${route.params.sprintId || ''}`, () => project.value?._id], (next, previous) => {
+    const changed = !previous || next.some((value, index) => value !== previous[index]);
+    if (changed && project.value?._id) loadBoard({ showLoading: true });
+});
+
+watch(aggregateMode, (isAggregate) => {
+    if (!isAggregate) updateBoardSubscription();
+});
+
+watch([showAllTasks, userId], () => updateBoardSubscription());
+
+watch([() => String(project.value?._id || ''), boardScopeKey, boardCountsStaleSignature], (next, previous) => {
+    if (!previous || !aggregateMode.value || next[0] !== previous[0] || next[1] !== previous[1] || next[2] === previous[2]) return;
+    scheduleBoardGroupCountRefresh();
+});
 
 /* Columns the board already read answer at once (`firstPageOnly`), so only a new one is asked for, and the board stays drawn. */
 useGroupSource(project, () => props.grouped, () => {
     if (!props.sprints?.length) return;
-    groupBy(props.grouped, true, project.value, props.sprints, internalGroupedTasks, true, 'board', false, true, (resp) => {
-        internalGroupedTasks.value = resp;
-        /* A task an agent took or let go moved between columns the board had already counted. */
-        if (props.grouped === AGENT_WORK_GROUP && resp[0]?.items?.length) {
-            getGroupCounts({ projectId: project.value._id, sprintId: resp[0].id, items: resp[0].items, projectData: project.value })
-                .catch((error) => console.error("ERROR in board column counts: ", error));
-        }
-    }, { firstPageOnly: true });
+    loadBoard();
 });
 
 onMounted(async () => {
     markFirstRunStep(FIRST_RUN_STEPS.BOARD_VIEW);
-    if (project.value?._id && props.sprints?.length) {
-        isLoading.value = true;
+    await loadBoard({ showLoading: true });
+});
 
-        try {
-            /* The sprint being in the store does not say its columns were read: the Table reads a
-               row's subtasks into it. Each column asks, and one that was read answers at once. */
-            await new Promise((resolve) => {
-                groupBy(props.grouped, true, project.value, props.sprints, internalGroupedTasks, true, 'board', false, true, (resp) => {
-                    internalGroupedTasks.value = resp;
-                    resolve();
-                }, { firstPageOnly: true });
-            });
-
-        } catch (error) {
-            console.error("Error during initial groupBy:", error);
-        } finally {
-            setTimeout(() => {
-                isLoading.value = false;
-            }, 500);
-        }
-    }
+onBeforeUnmount(() => {
+    boardViewUnmounted = true;
+    clearTimeout(boardGroupCountTimer);
+    boardLoadRun.value += 1;
+    boardSubscriptionRevision += 1;
+    dispatch('projectData/unsubscribeBoardTaskRooms', { ownerKey: boardOwnerKey }).catch(() => {});
 });
 
 </script>
@@ -312,5 +628,6 @@ onMounted(async () => {
 
 <style>
 .board-card-fields { display: flex; justify-content: flex-end; align-items: center; gap: var(--sp-3); padding: var(--sp-2) var(--page-pad-x, 20px) 0; }
+.board-load-failure { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); margin: var(--sp-2) var(--page-pad-x, 20px) 0; padding: var(--sp-2) var(--sp-3); border: 1px solid var(--border); border-radius: var(--r-sm, 6px); color: var(--ink-2); font-size: var(--fs-sm, 12px); }
 @media (max-width: 767px) { .board-card-fields { padding: var(--sp-2) 16px 0; } }
 </style>

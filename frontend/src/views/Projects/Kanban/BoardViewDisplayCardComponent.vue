@@ -46,6 +46,12 @@
                             @keydown.space.self.prevent="!showArchiveVar ? toggleTaskDetail(element) : ''"
                         >
                             <span v-if="taskKey" class="card-key">{{ taskKey }}</span>
+                            <span
+                                v-if="aggregateMode && membershipListName"
+                                class="board-membership-mark"
+                                :title="membershipListName"
+                                :aria-label="membershipListName"
+                            >{{ membershipListName }}</span>
                             <TaskHomeMark v-if="!isSubTask" :task="element" :list="viewedList" />
                             <img v-if="element.deletedStatusKey === 2" :src="inventoryIcon" alt="inventory" class="card-title__state" />
                             <img v-if="element.deletedStatusKey === 1" :src="deleteIcon" alt="delete" class="card-title__state" />
@@ -256,6 +262,7 @@
         groupValue: [Number, String],
         itemData: Object,
         isSubTask: Boolean,
+        aggregateMode: { type: Boolean, default: false },
         parentAssignee: Array,
         // 28b: the open run / pending proposal for THIS task, resolved once per
         // board by KanbanBoard so every card does not poll on its own.
@@ -274,7 +281,17 @@
     const {getUser, getTeam, getPriorities} = useGetterFunctions();
     const projectData = inject("selectedProject");
     const $toast = useToast()
-    const element = ref(props.data)
+    const canonicalBoardTask = (task) => {
+        if (!task) return task;
+        if (!task.boardListId && !task.boardListName && !task.boardMembershipKey) return task;
+        const canonical = { ...task };
+        delete canonical.boardListId;
+        delete canonical.boardListName;
+        delete canonical.boardMembershipKey;
+        return canonical;
+    };
+    const element = ref(canonicalBoardTask(props.data))
+    const membershipListName = computed(() => props.data?.boardListName || '')
     const heldByAgent = computed(() => Boolean(agentWorkFor(element.value?._id)));
     const TAG_CHIP_LIMIT = 4
     const taskTags = computed(() => taskTagChips(projectData.value?.tagsArray, element.value?.tagsArray))
@@ -304,7 +321,7 @@
     const searchedTask = inject('searchedTask');
     const taskCollapsed = inject("taskCollapsed");
     const boardMenu = inject("boardTaskMenu", null);
-    const viewedList = computed(() => ({ sprintId: props.itemData?.sprintId, projectId: projectData.value?._id }));
+    const viewedList = computed(() => ({ sprintId: props.data?.boardListId || props.itemData?.boardListId || props.itemData?.sprintId, projectId: projectData.value?._id }));
     const menuItems = computed(() => taskMenuItems(element.value, boardMenu?.rights.value, { canNest: depthOf(element.value) < MAX_DEPTH, listId: viewedList.value.sprintId }));
     const subtaskTree = inject("boardSubtaskTree", null);
     const subtasksOpen = computed(() => Boolean(subtaskTree?.isExpanded(element.value?._id)));
@@ -429,7 +446,7 @@
 
     watch(() => props.data, (newVal, oldVal) => {
         if(JSON.stringify(newVal) !== JSON.stringify(oldVal)) {
-            element.value = newVal;
+            element.value = canonicalBoardTask(newVal);
         }
     })
 
@@ -479,7 +496,7 @@
         taskClass.updateAssignee({
             firebaseObj: updateObject,
             projectData: project,
-            taskData: props.data,
+            taskData: canonicalBoardTask(props.data),
             employeeName: getUser(value.id).Employee_Name,
             type: operation,
             userData,
@@ -487,7 +504,7 @@
         })
         .then(() => {
             if(operation === "assigneRemove"){
-                commit("projectData/mutateSearchTask", {op:"modified", data: [{...props.data, AssigneeUserId: (props.data.AssigneeUserId || []).filter((x) => x !== value.id)}]});
+                commit("projectData/mutateSearchTask", {op:"modified", data: [{...canonicalBoardTask(props.data), AssigneeUserId: (props.data.AssigneeUserId || []).filter((x) => x !== value.id)}]});
             }
             $toast.success(t(`Toast.Assignee ${type === "add" || type === "replace" ? 'added' : 'removed'} successfully`), {position: "top-right"})
         })
@@ -534,7 +551,7 @@
     const updateDueDate = (event) => {
         try {
             if(!event?.dateVal) return;
-            updateTaskByGroup(props.data, {seconds: new Date(event.dateVal).getTime()/1000}, 3).catch((error) => console.error("ERROR in updateDueDate: ", error));
+            updateTaskByGroup(element.value, {seconds: new Date(event.dateVal).getTime()/1000}, 3).catch((error) => console.error("ERROR in updateDueDate: ", error));
         } catch (error) {
             console.error("ERROR in updateDueDate: ", error);
         }
@@ -641,3 +658,22 @@
         openTask({ ...paramsObj, companyId: paramsObj.cid, projectId: paramsObj.id, tab: 'activity' })
     }
 </script>
+
+<style scoped>
+.board-membership-mark {
+    display: inline-flex;
+    align-items: center;
+    max-width: 112px;
+    margin-right: var(--gap-row, 5px);
+    padding: 1px 5px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface-2);
+    color: var(--ink-2);
+    font: 500 var(--fs-2xs, 10px)/1.3 var(--font-ui);
+    text-overflow: ellipsis;
+    vertical-align: middle;
+    white-space: nowrap;
+}
+</style>

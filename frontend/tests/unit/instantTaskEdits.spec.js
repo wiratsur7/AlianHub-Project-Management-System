@@ -64,6 +64,8 @@ const OPEN = { status: { text: 'Open', key: 1, type: 'default_active' }, statusT
 const PROGRESS = { status: { text: 'In Progress', key: 3, type: 'active' }, statusType: 'active', statusKey: 3 };
 const DONE = { status: { text: 'Done', key: 2, type: 'close' }, statusType: 'close', statusKey: 2 };
 const OLD_DUE = '2026-10-05T00:00:00.000Z';
+const OLD_START = '2026-10-02T00:00:00.000Z';
+const NEW_START = new Date('2026-10-04T00:00:00.000Z');
 const NEW_DUE = new Date('2026-10-09T00:00:00.000Z');
 
 const STATUS_GROUPS = { type: 0, items: [{ key: 'statusKey_1', value: 1, name: 'Open' }, { key: 'statusKey_3', value: 3, name: 'In Progress' }, { key: 'statusKey_2', value: 2, name: 'Done' }] };
@@ -190,6 +192,88 @@ describe('a write that is never answered', () => {
         vi.advanceTimersByTime(2000);
         echo(OPEN);
         expect(row().statusKey).toBe(1);
+    });
+});
+
+describe('a Gantt date drag', () => {
+    beforeEach(() => seed({ over: { startDate: OLD_START, DueDate: OLD_DUE } }));
+
+    it('shows both changed dates optimistically and restores the exact snapshot on refusal', async () => {
+        const firebaseObj = { startDate: NEW_START, DueDate: NEW_DUE };
+        const done = taskClass.updateDates({ firebaseObj, projectData: PROJECT, taskData: sent(), userData: USER });
+
+        expect(row()).toMatchObject(firebaseObj);
+        await flushPromises();
+        expect(h.apiRequest.mock.calls[0][2]).toMatchObject({ action: 'updateDates', firebaseObj, taskData: expect.objectContaining({ startDate: OLD_START, DueDate: OLD_DUE }) });
+        refuse();
+        await expect(done).rejects.toMatchObject({ status: false });
+        expect(row()).toMatchObject({ startDate: OLD_START, DueDate: OLD_DUE });
+    });
+});
+
+describe('a Gantt dependency date batch', () => {
+    beforeEach(() => seed({ over: { startDate: OLD_START, DueDate: OLD_DUE } }));
+
+    const rowsForBatch = () => [{ task: sent(), startDate: NEW_START, DueDate: NEW_DUE }];
+
+    it('restores only dates that still contain its optimistic values after a failed batch', async () => {
+        const done = taskClass.updateDatesBatch({ rows: rowsForBatch(), userData: USER });
+        expect(row()).toMatchObject({ startDate: NEW_START, DueDate: NEW_DUE });
+        echo({ startDate: new Date('2026-10-06T00:00:00.000Z') });
+        await flushPromises();
+        refuse();
+        await flushPromises();
+        refuse(1);
+
+        await expect(done).rejects.toMatchObject({ response: expect.any(Object) });
+        expect(row().startDate).toEqual(new Date('2026-10-06T00:00:00.000Z'));
+        expect(row().DueDate).toBe(OLD_DUE);
+    });
+
+    it('keeps server-committed dates when the bulk response is lost', async () => {
+        const done = taskClass.updateDatesBatch({ rows: rowsForBatch(), userData: USER });
+        await flushPromises();
+        refuse();
+        await flushPromises();
+        pending[1].resolve({
+            status: 200,
+            data: [{ _id: 't1', startDate: NEW_START.toISOString(), DueDate: NEW_DUE.toISOString() }],
+        });
+
+        await expect(done).resolves.toMatchObject({ status: true, reconciled: true, data: { updated: ['t1'] } });
+        expect(new Date(row().startDate)).toEqual(NEW_START);
+        expect(new Date(row().DueDate)).toEqual(NEW_DUE);
+    });
+
+    it('does not replace a newer socket date with an older reconciliation read', async () => {
+        const newerStart = new Date('2026-10-07T00:00:00.000Z');
+        const done = taskClass.updateDatesBatch({ rows: rowsForBatch(), userData: USER });
+        await flushPromises();
+        refuse();
+        await flushPromises();
+        echo({ startDate: newerStart });
+        pending[1].resolve({
+            status: 200,
+            data: [{ _id: 't1', startDate: NEW_START.toISOString(), DueDate: NEW_DUE.toISOString() }],
+        });
+
+        await expect(done).rejects.toMatchObject({ response: expect.any(Object) });
+        expect(new Date(row().startDate)).toEqual(newerStart);
+        expect(new Date(row().DueDate)).toEqual(NEW_DUE);
+    });
+
+    it('treats a successful HTTP response with skipped rows as a partial failure', async () => {
+        const done = taskClass.updateDatesBatch({ rows: rowsForBatch(), userData: USER });
+        await flushPromises();
+        pending[0].resolve({ data: { status: true, data: { updated: [], skipped: [{ taskId: 't1' }], errors: [] } } });
+        await flushPromises();
+        pending[1].resolve({
+            status: 200,
+            data: [{ _id: 't1', startDate: OLD_START, DueDate: OLD_DUE }],
+        });
+
+        await expect(done).rejects.toThrow('bulkUpdateDates did not update every requested task');
+        expect(row()).toMatchObject({ startDate: OLD_START, DueDate: OLD_DUE });
     });
 });
 

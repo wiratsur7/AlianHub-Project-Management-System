@@ -311,36 +311,21 @@ class Task {
     /* -------------- UPDATE DATES (start + due together) — Gantt drag / resize -----------------*/
 
     updateDates({ firebaseObj, projectData, taskData, userData }) {
-        return new Promise((resolve,reject) => {
-            try {
-                const {sprintId,ProjectID} = taskData;
-                // Optimistic store update so the Gantt (and every other open view) moves immediately.
-                showInViews(ProjectID, sprintId, {...taskData, ...firebaseObj}, {...firebaseObj});
-                apiRequest("patch", env.V2_TASKS, {
-                    action: "updateDates",
-                    firebaseObj,
-                    projectData,
-                    taskData,
-                    userData: {
-                        "Employee_Name": userData.Employee_Name,
-                        "id": userData.id,
-                        "companyOwnerId": userData.companyOwnerId
-                    }
-                })
-                .then((response) => {
-                    if (response.data.status) {
-                        resolve({status: true, statusText: "Task dates updated successfully"});
-                    } else {
-                        reject({status: false, error: response.data.error})
-                    }
-                })
-                .catch((error) => {
-                    reject({status: false, error: error})
-                })
-            } catch (error) {
-                reject({status: false, error: error})
-            }
-        })
+        return instantEdit({
+            task: taskData,
+            fields: firebaseObj,
+            send: () => patchTask({
+                action: "updateDates",
+                firebaseObj,
+                projectData,
+                taskData,
+                userData: {
+                    "Employee_Name": userData.Employee_Name,
+                    "id": userData.id,
+                    "companyOwnerId": userData.companyOwnerId
+                }
+            }, "Task dates updated successfully"),
+        });
     }
 
     /* rows: [{ task, startDate, DueDate }], written in one request; a failed write puts every task's old dates back. */
@@ -348,7 +333,28 @@ class Task {
         const commitDates = (task, dates) => Store.commit('projectData/mutateUpdateFirebaseTasks', {
             snap: null, op: "modified", pid: task.ProjectID, sprintId: task.sprintId, data: { ...task, ...dates }, updatedFields: { ...dates },
         });
-        const previous = rows.map(({ task }) => ({ startDate: task.startDate, DueDate: task.DueDate }));
+        const requestedIds = rows.map(({ task }) => String(task._id));
+        const currentTask = (task) => {
+            const project = Store.state?.projectData?.tasks?.[task.ProjectID];
+            const buckets = Object.values(project || {});
+            for (const bucket of buckets) {
+                const found = (bucket?.tasks || []).find((row) => String(row._id) === String(task._id))
+                    || (bucket?.tasks || []).flatMap((row) => row.subtaskArray || [])
+                        .find((row) => String(row._id) === String(task._id));
+                if (found) return found;
+            }
+            return task;
+        };
+        const sameDate = (left, right) => {
+            if (left === right) return true;
+            const a = new Date(left);
+            const b = new Date(right);
+            return !Number.isNaN(a.getTime()) && !Number.isNaN(b.getTime()) && a.getTime() === b.getTime();
+        };
+        const previous = rows.map(({ task }) => ({
+            startDate: task.startDate instanceof Date ? new Date(task.startDate) : task.startDate,
+            DueDate: task.DueDate instanceof Date ? new Date(task.DueDate) : task.DueDate,
+        }));
         rows.forEach(({ task, startDate, DueDate }) => commitDates(task, { startDate, DueDate }));
         try {
             const response = await apiRequest("post", env.V2_TASKS_BULK, {
@@ -357,9 +363,66 @@ class Task {
                 userData: { Employee_Name: userData.Employee_Name, id: userData.id, companyOwnerId: userData.companyOwnerId },
             });
             if (!response?.data?.status) throw new Error(response?.data?.statusText || "bulkUpdateDates failed");
-            return response.data.data;
+            const summary = response.data.data;
+            const updatedIds = Array.isArray(summary?.updated) ? summary.updated.map(String) : null;
+            if (!updatedIds || requestedIds.some((id) => !updatedIds.includes(id))) {
+                const error = new Error("bulkUpdateDates did not update every requested task");
+                error.updatedTaskIds = new Set(updatedIds || []);
+                throw error;
+            }
+            return summary;
         } catch (error) {
-            rows.forEach(({ task }, at) => commitDates(task, previous[at]));
+            let serverRows = new Map();
+            try {
+                // A write can reach Mongo and publish its socket updates even if its HTTP
+                // response is lost. Read the authoritative dates before rolling back.
+                const response = await apiRequest("post", `${env.TASK}/find`, {
+                    findQuery: [{ $match: { _id: { objId: { $in: requestedIds } } } }],
+                });
+                const results = Array.isArray(response?.data)
+                    ? response.data.flatMap((item) => Array.isArray(item?.result) ? item.result : (item?._id ? [item] : []))
+                    : [];
+                serverRows = new Map(results.filter((item) => item?._id).map((item) => [String(item._id), item]));
+            } catch (readError) {
+                // Keep the original write error; a failed reconciliation falls back to snapshots.
+            }
+
+            let everyRequestedDateWasSaved = true;
+            rows.forEach(({ task, startDate, DueDate }, at) => {
+                const id = String(task._id);
+                const live = currentTask(task);
+                const serverTask = serverRows.get(id);
+                if (serverTask) {
+                    const savedDates = { startDate: serverTask.startDate, DueDate: serverTask.DueDate };
+                    const safeDates = {};
+                    ["startDate", "DueDate"].forEach((field) => {
+                        // A newer socket edit may have landed after the read-back query.
+                        // Replace only our optimistic value or an echo of this server row.
+                        if (sameDate(live[field], rows[at][field]) || sameDate(live[field], savedDates[field])) {
+                            safeDates[field] = savedDates[field];
+                        } else {
+                            everyRequestedDateWasSaved = false;
+                        }
+                    });
+                    if (Object.keys(safeDates).length) commitDates(live, safeDates);
+                    if (!sameDate(savedDates.startDate, startDate) || !sameDate(savedDates.DueDate, DueDate)) {
+                        everyRequestedDateWasSaved = false;
+                    }
+                    return;
+                }
+                if (error.updatedTaskIds?.has(id)) {
+                    everyRequestedDateWasSaved = false;
+                    return;
+                }
+                everyRequestedDateWasSaved = false;
+                const rollback = {};
+                if (sameDate(live.startDate, startDate)) rollback.startDate = previous[at].startDate;
+                if (sameDate(live.DueDate, DueDate)) rollback.DueDate = previous[at].DueDate;
+                if (Object.keys(rollback).length) commitDates(live, rollback);
+            });
+            if (serverRows.size === requestedIds.length && everyRequestedDateWasSaved) {
+                return { status: true, statusText: "Task dates updated successfully", data: { updated: requestedIds }, reconciled: true };
+            }
             throw error;
         }
     }

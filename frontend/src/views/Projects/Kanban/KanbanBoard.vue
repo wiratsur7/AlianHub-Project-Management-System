@@ -41,7 +41,7 @@
                     </button>
                 </div>
                 <div class="add-task-section" v-if="activeColumnId === column.key" :id="column.key">
-                    <BoardViewTaskCreateVue :data="column" :groupValue="groupValue" @toggle="(val) => showAddInput(val)" :sprintData="{}" :sprintId="sprintId" />
+                    <BoardViewTaskCreateVue :data="column" :groupValue="groupValue" @toggle="(val) => showAddInput(val)" :sprintData="{}" :sprintId="sprintId" :allowedSprintIds="aggregateMode ? boardListIds : null" />
                 </div>
 
                 <div class="kanban-cards-area">
@@ -49,7 +49,8 @@
                         class="kanban-cards"
                         :list="column.tasksArray"
                         :group="{ name: 'tasks', put: (to, from, card) => !column.dropDisabled && groupTakesTask(column, card?.dataset?.taskType) }"
-                        item-key="id"
+                        :item-key="cardKey"
+                        :sort="!aggregateMode"
                         @change="updateEvent($event, column)"
                         @scroll="checkScroll($event, column)"
                         :style="`max-height: ${columnMaxHeight(column.key)};`"
@@ -65,13 +66,22 @@
                                     :itemData="column"
                                     :groupValue="groupValue"
                                     :isSubTask="false"
+                                    :aggregateMode="aggregateMode"
                                     :agentRun="runFor(element._id)"
                                     :agentProposal="proposalFor(element._id)"
                                 />
                             </div>
                         </template>
                     </Draggable>
-                    <OtherProjectRows as="card" :rows="otherRows.placed[column.key] || []" :projects="otherProjects" :list="viewedList" />
+                    <OtherProjectRows
+                        v-for="otherGroup in otherRowsByList(otherRows.placed[column.key] || [])"
+                        :key="otherGroup.key"
+                        as="card"
+                        :rows="otherGroup.rows"
+                        :projects="otherProjects"
+                        :list="otherGroup.list"
+                        :aggregateMode="aggregateMode"
+                    />
                     <p v-if="!column.tasksArray?.length && !otherRows.placed[column.key]?.length" class="column-empty">{{ $t('Projects.column_empty_drop') }}</p>
                 </div>
 
@@ -86,7 +96,16 @@
                     <span class="column-title" :title="$t('TaskLists.other_projects')">{{ $t('TaskLists.other_projects') }}</span>
                 </div>
                 <div class="kanban-cards-area">
-                    <OtherProjectRows as="card" :rows="otherRows.unplaced" :projects="otherProjects" :list="viewedList" :truncated="otherTruncated" />
+                    <OtherProjectRows
+                        v-for="(otherGroup, index) in otherRowsByList(otherRows.unplaced, true)"
+                        :key="otherGroup.key"
+                        as="card"
+                        :rows="otherGroup.rows"
+                        :projects="otherProjects"
+                        :list="otherGroup.list"
+                        :aggregateMode="aggregateMode"
+                        :truncated="otherTruncated && index === 0"
+                    />
                 </div>
             </div>
         </div>
@@ -122,6 +141,14 @@ import { useSubtaskTree } from "@/views/Projects/composables/subtaskTree";
 import { maskOf } from "@/utils/iconMask";
 
 const plusIcon = require("@/assets/images/svg/pluss.svg");
+const canonicalBoardTask = (task) => {
+    if (!task) return task;
+    const canonical = { ...task };
+    delete canonical.boardListId;
+    delete canonical.boardListName;
+    delete canonical.boardMembershipKey;
+    return canonical;
+};
 
 //Props
 const props = defineProps({
@@ -134,6 +161,18 @@ const props = defineProps({
     },
     sprintId: {
         type: String
+    },
+    aggregateMode: {
+        type: Boolean,
+        default: false
+    },
+    boardLists: {
+        type: Array,
+        default: () => []
+    },
+    loadBoardGroupPages: {
+        type: Function,
+        default: null
     },
     /** Cards of tasks added to this list from other projects: `placed` by column key, `unplaced` when no column is named for them. */
     otherRows: {
@@ -159,7 +198,6 @@ const groupValue = ref(props.group)
 const activeColumnId = ref(null)
 const companyId = inject("$companyId")
 const projectData = inject("selectedProject")
-const viewedList = computed(() => ({ sprintId: props.sprintId, projectId: projectData.value?._id }))
 const showArchiveVar = inject("showArchived");
 const clientWidth = inject("$clientWidth");
 const hoveredColumnIndex = ref(null)
@@ -169,6 +207,36 @@ const { t } = useI18n()
 const $toast = useToast();
 const { updateTaskByGroup } = useUpdateTasks()
 const { checkPermission } = useCustomComposable();
+const boardListIds = computed(() => props.boardLists.map((list) => String(list?.id || list?._id || '')).filter(Boolean));
+const loadingGroups = new Set();
+
+const cardKey = (task) => task?.boardMembershipKey || task?.id || task?._id;
+
+function otherRowsByList(rows, includeTruncated = false) {
+    const groups = new Map();
+    (rows || []).forEach((row) => {
+        const listId = String(props.aggregateMode ? (row?.boardListId || props.sprintId || '') : (props.sprintId || ''));
+        const key = listId || 'current';
+        if (!groups.has(key)) {
+            groups.set(key, {
+                key,
+                rows: [],
+                list: { sprintId: listId || props.sprintId, projectId: projectData.value?._id }
+            });
+        }
+        groups.get(key).rows.push(row);
+    });
+    if (!groups.size && includeTruncated && props.otherTruncated) {
+        const listId = String(props.boardLists[0]?.id || props.boardLists[0]?._id || props.sprintId || '');
+        const key = listId || 'current';
+        groups.set(key, {
+            key,
+            rows: [],
+            list: { sprintId: listId || props.sprintId, projectId: projectData.value?._id }
+        });
+    }
+    return [...groups.values()];
+}
 
 // The watch is shared with the project header, which owns its lifetime; the
 // board only makes sure it is running for the project on screen.
@@ -242,6 +310,7 @@ onMounted(() => {
 })
 
 function init() {
+    if (props.aggregateMode) return;
     const taskListPermission = checkPermission('task.task_list', projectData.value?.isGlobalPermission);
     const rows = columns.value.flatMap((column) => indexRepairRows(column.tasksArray, column, taskListPermission));
     if (!rows.length) return;
@@ -309,6 +378,17 @@ const updateEvent = (event, task) => {
         index = event.moved.newIndex
     }
     if (element) {
+        if (props.aggregateMode) {
+            if (event.moved) {
+                putBack(task.tasksArray, event.moved);
+                return;
+            }
+            if (event.added) {
+                updateTaskByGroup(canonicalBoardTask(element), task, groupValue.value, null, true)
+                    .catch((error) => console.error("ERROR in board drop: ", error));
+            }
+            return;
+        }
         if (event.added) {
             updateTaskByGroup(element, task, groupValue.value, null, true).catch((error) => console.error("ERROR in board drop: ", error));
         }
@@ -412,7 +492,8 @@ const updateEvent = (event, task) => {
 function checkScroll(e,task) {
     debouncer(100).then(() => {
         if(e.target.scrollTop >= (e.target.scrollHeight - e.target.clientHeight) - 200) {
-            getPaginatedTasks({ pid: projectData.value._id, sprintId: task.sprintId, item: task, fetchNew: true });
+            if (props.aggregateMode) loadMore(task);
+            else getPaginatedTasks({ pid: projectData.value._id, sprintId: task.sprintId, item: task, fetchNew: true });
         }
     })
     .catch((err) => {
@@ -433,7 +514,20 @@ const moreCount = (column) => Math.max(0, tasksCount(column) - (column?.tasksArr
 
 // A column that never overflows never fires checkScroll, so the remainder needs
 // its own way in.
-const loadMore = (column) => getPaginatedTasks({ pid: projectData.value?._id, sprintId: column.sprintId, item: column, fetchNew: true });
+const loadMore = (column) => {
+    if (!props.aggregateMode) return getPaginatedTasks({ pid: projectData.value?._id, sprintId: column.sprintId, item: column, fetchNew: true });
+    if (!props.loadBoardGroupPages) return Promise.resolve({ failed: [] });
+    const buckets = column?.boardListItems || [];
+    const key = buckets.map((source) => `${source.sprintId}:${source.item?.searchKey}_${source.item?.searchValue}`).join('|');
+    if (!key || loadingGroups.has(key)) return Promise.resolve({ failed: [] });
+    loadingGroups.add(key);
+    return props.loadBoardGroupPages(buckets, { firstPageOnly: false })
+        .catch((error) => {
+            console.error('ERROR loading more board tasks: ', error);
+            return { failed: [] };
+        })
+        .finally(() => loadingGroups.delete(key));
+};
 
 const isBlockedColumn = (column) => /block/i.test(String(column?.name || ''));
 

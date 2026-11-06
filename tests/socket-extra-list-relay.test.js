@@ -126,6 +126,8 @@ describe('a change to a task that is in another list', () => {
         expect(events.map((item) => item.event)).toEqual(['taskUpdate']);
         expect(events[0].payload.fullDocument).toMatchObject({ _id: ids.task, TaskName: 'Write the brief, v2', sprintId: ids.homeList });
         expect(events[0].payload.updatedFields).toEqual({ TaskName: 'Write the brief, v2' });
+        expect(events[0].payload.membershipSprintId).toBe(ids.thereList);
+        expect(events[0].payload.eventId).toEqual(expect.any(String));
     });
 
     it('sends nothing at all to a person on the list who cannot open the task\'s project', async () => {
@@ -160,8 +162,21 @@ describe('a change to a task that is in another list', () => {
 
         expect(forOnBoth).toHaveLength(1);
         expect(forOnBoth[0].payload.updatedFields.extraLists).toEqual([entry(ids.home, ids.secondList)]);
+        expect(forOnBoth[0].payload.membershipSprintId).toBe(ids.thereList);
         expect(forOnBoth[0].payload).not.toHaveProperty('leftLists');
         expect(forListOnly).toEqual([]);
+    });
+
+    it('marks each membership delivery with its list and shares one event id across the fanout', async () => {
+        const onBoth = await connect(ON_BOTH);
+        expect(await joinList(onBoth, ids.home, ids.homeList)).toBe(true);
+        expect(await joinList(onBoth, ids.home, ids.secondList)).toBe(true);
+        expect(await joinList(onBoth, ids.elsewhere, ids.thereList)).toBe(true);
+
+        const [events] = await heard([onBoth], () => change(taskRow()));
+
+        expect(events.map((item) => item.payload.membershipSprintId).sort()).toEqual([ids.homeList, ids.secondList, ids.thereList].sort());
+        expect(new Set(events.map((item) => item.payload.eventId)).size).toBe(1);
     });
 
     it('is heard once in the list the task lives in, and not in a list it is not in', async () => {

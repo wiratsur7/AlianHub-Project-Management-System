@@ -118,7 +118,7 @@
     </div>
 </template>
 <script setup>
-    import { computed, inject, onMounted, ref } from "vue";
+    import { computed, inject, onMounted, ref, watch } from "vue";
     import { useStore } from "vuex";
 
     import DropDown from '@/components/molecules/DropDown/DropDown.vue'
@@ -135,7 +135,7 @@
     import { useValidation } from "@/composable/Validation";
     import { useToast } from "vue-toast-notification";
     import { useI18n } from "vue-i18n";
-    import { folderPathLabel } from "@/utils/folderTree";
+    import { folderIdOf, folderPathLabel } from "@/utils/folderTree";
     import { maskOf } from "@/utils/iconMask";
     import { defaultStatus } from "@/components/organisms/QuickCreateTask/quickCreateTask";
     const { t } = useI18n();
@@ -176,6 +176,10 @@
         },
         sprintId: {
             type: String
+        },
+        allowedSprintIds: {
+            type: Array,
+            default: null
         }
     })
     const projectData = inject("selectedProject");
@@ -204,35 +208,47 @@
         return projectData.value
     })
 
-    onMounted(() => {
-        let sprints = [...(Object.values(projectData.value?.sprintsObj || {}))];
-        Object.values(projectData.value?.sprintsfolders || {}).forEach((folder) => {
-            let sprintsArray = [];
-            Object.values(folder?.sprintsObj || {}).forEach((sprint) => {
-                sprintsArray.push({ ...sprint })
-            })
-            sprints.push({ sprints: sprintsArray, isFolderExpand: false, folderName: folderPathLabel(projectData.value.sprintsfolders, folder), isFolderSprint: true })
-        })
-        taskOption.value = sprints
-        if (props.sprintData && Object.keys(props.sprintData).length > 0) {
-            selectedSprint.value = props.sprintData
-        } else {
-            let sp = {}
-            taskOption.value.forEach((x) => {
-                if (x.isFolderSprint) {
-                    let ind = x.sprints.findIndex((x) => x.id === props.sprintId)
-                    if (ind !== -1) {
-                        sp = x.sprints[ind]
-                    }
-                } else {
-                    if (x.id == props.sprintId) {
-                        sp = x
-                    }
-                }
-            })
-            selectedSprint.value = sp
-        }
+    let previousScopeSignature = '';
+    const sprintIdsSignature = (sprints = {}) => Object.values(sprints).map((sprint) => `${sprint?.id || sprint?._id || ''}:${sprint?.name || ''}`).sort().join('|');
+    function updateListOptions() {
+        const allowed = Array.isArray(props.allowedSprintIds)
+            ? new Set(props.allowedSprintIds.map(String))
+            : null;
+        const normalize = (sprint) => ({ ...sprint, id: String(sprint?.id || sprint?._id || '') });
+        const roots = Object.values(projectData.value?.sprintsObj || {})
+            .map(normalize)
+            .filter((sprint) => sprint.id && (!allowed || allowed.has(sprint.id)));
+        const folders = Object.values(projectData.value?.sprintsfolders || {}).flatMap((folder) => {
+            const sprintsArray = Object.values(folder?.sprintsObj || {})
+                .map((sprint) => ({ ...normalize(sprint), folderId: sprint.folderId || folderIdOf(folder) }))
+                .filter((sprint) => sprint.id && (!allowed || allowed.has(sprint.id)));
+            return sprintsArray.length
+                ? [{ sprints: sprintsArray, isFolderExpand: false, folderName: folderPathLabel(projectData.value.sprintsfolders, folder), isFolderSprint: true }]
+                : [];
+        });
+        taskOption.value = [...roots, ...folders];
+        const allSprints = taskOption.value.flatMap((option) => option.isFolderSprint ? option.sprints : [option]);
+        const scopeSignature = [
+            projectData.value?._id || '',
+            props.sprintId || '',
+            Array.isArray(props.allowedSprintIds) ? props.allowedSprintIds.map(String).join(',') : '*'
+        ].join(':');
+        const sameScope = previousScopeSignature === scopeSignature;
+        const preferredId = String(props.sprintData?.id || (sameScope ? selectedSprint.value?.id : '') || props.sprintId || '');
+        previousScopeSignature = scopeSignature;
+        selectedSprint.value = allSprints.find((sprint) => sprint.id === preferredId) || allSprints[0] || {};
+    }
 
+    watch(() => [
+        projectData.value?._id,
+        sprintIdsSignature(projectData.value?.sprintsObj),
+        Object.values(projectData.value?.sprintsfolders || {}).map((folder) => `${folder?.folderId || folder?._id || ''}:${sprintIdsSignature(folder?.sprintsObj)}`).sort().join('|'),
+        props.sprintId,
+        Array.isArray(props.allowedSprintIds) ? props.allowedSprintIds.map(String).join(',') : '*',
+        props.sprintData?.id || ''
+    ], updateListOptions, { immediate: true });
+
+    onMounted(() => {
         const taskTypeIndex = taskTypes.value && taskTypes.value.length ? 0 : -1
         if (taskTypeIndex !== -1) {
             taskType.value = taskTypes.value[taskTypeIndex]

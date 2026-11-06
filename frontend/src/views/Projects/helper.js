@@ -786,7 +786,7 @@ export function taskListHelper() {
     const priorities = computed(() => getters["settings/companyPriority"])
     const project = inject('selectedProject');
     const permit = checkPermission("task.show_tasks",project?.value?.isGlobalPermission);
-    function getSprintTasks({projectId, sprintId, item, fetchNew = false, projectData ,indexName,parentId = '',groupType,resetTable,skip,firstPageOnly = false}) {
+    function getSprintTasks({projectId, sprintId, item, fetchNew = false, projectData ,indexName,parentId = '',groupType,resetTable,skip,firstPageOnly = false,allPages = false}) {
         return new Promise((resolve, reject) => {
             try {
                 if(permit === null && projectData.isGlobalPermission === false) {
@@ -824,7 +824,8 @@ export function taskListHelper() {
                         indexName: indexName,
                         parentId : parentId,
                         skip,
-                        firstPageOnly
+                        firstPageOnly,
+                        allPages
                     })
                     .then(() => {
                         resolve();
@@ -836,8 +837,20 @@ export function taskListHelper() {
                 }
             } catch (error) {
                 console.error("ERROR: ", error);
+                reject(error);
             }
         })
+    }
+    function getBoardGroupPages({projectId, buckets, projectData, firstPageOnly = false, fetchNew = true}) {
+        if(permit === null && projectData?.isGlobalPermission === false) return Promise.resolve({ failed: [] });
+        return dispatch("projectData/getBoardGroupPages", {
+            pid: projectId,
+            buckets,
+            showAllTasks: projectData?.isGlobalPermission === false ? permit : true,
+            userId: userId.value,
+            firstPageOnly,
+            fetchNew
+        });
     }
     function getGroupCounts({projectId, sprintId, items, projectData, totals = [], table = false}) {
         if(permit === null && projectData.isGlobalPermission === false) return Promise.resolve();
@@ -871,7 +884,7 @@ export function taskListHelper() {
         })
     }
 
-    async function groupBy(type, refetch = false,project,sprintData,groupedTasks,isBoard,lView='list',resetTable=false,fetchTask = true,cb,{firstPageOnly = false} = {}) {
+    async function groupBy(type, refetch = false,project,sprintData,groupedTasks,isBoard,lView='list',resetTable=false,fetchTask = true,cb,{firstPageOnly = false,allSprints = false,allPages = false} = {}) {
         try {
             if(!project || !Object.keys(project).length) {
                 cb([])
@@ -1024,31 +1037,83 @@ export function taskListHelper() {
                 }
 
                 if(refetch === true && fetchTask === true) {
-                    let promises = [];
-                    openSprint.items.forEach((item) => {
-                        promises.push(
-                            getSprintTasks({projectId: project._id, sprintId:openSprint?.id ? openSprint?.id : openSprint?._id, item, fetchNew: lView == 'table' ? refetch : true,projectData: project, indexName: item.indexName, groupType: lView,resetTable:resetTable, firstPageOnly})
-                        )
-                    })
-                    Promise.allSettled(promises)
-                    .then(() => {
-                        groupedTasks.value = sprints;
-                        cb(groupedTasks.value)
-                        // getTaskArray();
+                    const sprintsToLoad = (allSprints ? sprints : [openSprint]).filter(Boolean);
+                    let loadFailed = false;
+                    const boardAggregate = lView === 'board' && allSprints;
+                    let boardLoadResult = { failed: [] };
 
-                        getMongoDBUpdate({
-                            projectId: project._id,
-                            sprintId: openSprint.id ? openSprint.id : openSprint._id,
-                            projectData: project,
-                            groupBy: {type: type,items: openSprint.items?.map((x) => ({key: `${x.searchKey}_${x.searchValue}`, value: x.searchValue, name: x.matchName || x.name}))},
-                            currentView: lView == 'table' ? 'tableTasks' : 'tasks'
+                    if(boardAggregate) {
+                        const buckets = sprintsToLoad.map((sprint) => ({
+                            sprintId: sprint.id || sprint._id,
+                            items: sprint.items || []
+                        }));
+                        try {
+                            const result = await getBoardGroupPages({
+                                projectId: project._id,
+                                buckets,
+                                projectData: project,
+                                firstPageOnly,
+                                fetchNew: true
+                            });
+                            boardLoadResult = result || { failed: [] };
+                            loadFailed = Boolean(boardLoadResult.failed?.length);
+                        } catch (error) {
+                            loadFailed = true;
+                            boardLoadResult = {
+                                failed: buckets.map((bucket) => ({
+                                    sprintId: bucket.sprintId,
+                                    groupKeys: (bucket.items || []).map((item) => item.key),
+                                    error
+                                }))
+                            };
+                            console.error(`Board task load failed for project ${project._id}:`, error);
+                        }
+                    } else {
+                        const jobs = sprintsToLoad.flatMap((sprint) => (sprint.items || []).map((item) => ({sprint, item})));
+                        const queue = [...jobs];
+                        const workerCount = Math.min(allSprints ? 4 : queue.length, queue.length);
+                        const workers = Array.from({length: workerCount}, async () => {
+                            while(queue.length) {
+                                const {sprint, item} = queue.shift();
+                                try {
+                                    await getSprintTasks({
+                                        projectId: project._id,
+                                        sprintId: sprint.id || sprint._id,
+                                        item,
+                                        fetchNew: true,
+                                        projectData: project,
+                                        indexName: item.indexName,
+                                        groupType: lView,
+                                        resetTable,
+                                        firstPageOnly,
+                                        allPages
+                                    });
+                                } catch (error) {
+                                    loadFailed = true;
+                                    console.error(`Gantt task load failed for list ${sprint.id || sprint._id}:`, error);
+                                }
+                            }
                         });
-                    })
-                    .catch((error) => {
-                        groupedTasks.value = sprints;
-                        cb(groupedTasks.value)
-                        console.error("ERROR in toggleSprints > Promise.allSettled: ", error);
-                    })
+                        await Promise.allSettled(workers);
+                    }
+                    groupedTasks.value = sprints;
+                    if(boardAggregate) cb(groupedTasks.value, boardLoadResult);
+                    else cb(groupedTasks.value);
+
+                    /* Aggregate Board subscriptions are managed once for its complete route scope.
+                       The legacy snapshot action replaces its single-list room/listeners each time. */
+                    if(!boardAggregate) {
+                        sprintsToLoad.forEach((sprint) => {
+                            getMongoDBUpdate({
+                                projectId: project._id,
+                                sprintId: sprint.id || sprint._id,
+                                projectData: project,
+                                groupBy: {type: type,items: sprint.items?.map((x) => ({key: `${x.searchKey}_${x.searchValue}`, value: x.searchValue, name: x.matchName || x.name}))},
+                                currentView: lView == 'table' ? 'tableTasks' : 'tasks'
+                            });
+                        });
+                    }
+                    return !loadFailed;
                 } else {
                     groupedTasks.value = sprints;
                     cb(groupedTasks.value)
@@ -1060,6 +1125,7 @@ export function taskListHelper() {
         } catch (error) {
             cb([])
             console.error('groupBy Error: ',error);
+            return false;
         }
     }
 
@@ -1119,6 +1185,7 @@ export function taskListHelper() {
         checkCase,
         getSprintTasks,
         getGroupCounts,
+        getBoardGroupPages,
         getMongoDBUpdate,
         searchMongoDBTasks
     }

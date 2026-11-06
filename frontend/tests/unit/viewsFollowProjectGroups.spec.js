@@ -35,8 +35,25 @@ vi.mock('@/services', () => {
             return [{ result: rows.slice(skip).map((task) => ({ ...task })), count: rows.length ? [{ count: rows.length }] : [] }];
         }
         return [Object.fromEntries(Object.entries(facet).map(([name, pipeline]) => {
-            const count = rows.filter((task) => matches(task, pipeline[0].$match)).length;
-            return [name, count ? [{ count }] : []];
+            let result = [...rows];
+            for (const step of pipeline) {
+                if (step.$match) result = result.filter((task) => matches(task, step.$match));
+                else if (step.$sort) {
+                    const entries = Object.entries(step.$sort);
+                    result.sort((left, right) => {
+                        for (const [field, direction] of entries) {
+                            if (left[field] === right[field]) continue;
+                            if (left[field] === undefined) return -direction;
+                            if (right[field] === undefined) return direction;
+                            return left[field] < right[field] ? -direction : direction;
+                        }
+                        return 0;
+                    });
+                } else if (step.$skip !== undefined) result = result.slice(step.$skip);
+                else if (step.$limit !== undefined) result = result.slice(0, step.$limit);
+                else if (step.$count) return [name, result.length ? [{ [step.$count]: result.length }] : []];
+            }
+            return [name, result.map((task) => ({ ...task }))];
         }))];
     };
     return {

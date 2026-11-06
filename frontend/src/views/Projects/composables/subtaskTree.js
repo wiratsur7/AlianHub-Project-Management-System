@@ -19,12 +19,16 @@ export function useSubtaskTree({ project, sprintId, rows, showArchived, searched
     const expandedIds = ref([]);
     const counts = ref({});
 
-    const bucket = computed(() => getters["projectData/tasks"]?.[project.value?._id]?.[sprintId.value]);
+    const bucketFor = (task) => {
+        const homeSprintId = String(task?.sprintId || sprintId.value || "");
+        return homeSprintId ? getters["projectData/tasks"]?.[project.value?._id]?.[homeSprintId] : null;
+    };
+    const homeSprintIdOf = (task) => String(task?.sprintId || sprintId.value || "");
     const isExpanded = (taskId) => expandedIds.value.includes(String(taskId));
 
     /* A row of the tree carries its children. A Table row does not, and a searched row carries only
-     * the subtasks that matched: when it has none, the sprint's tree is asked. */
-    const loaded = (task) => (own(task).length ? own(task) : loadedChildren(bucket.value, task?._id));
+     * the subtasks that matched: when it has none, the parent task's home-list tree is asked. */
+    const loaded = (task) => (own(task).length ? own(task) : loadedChildren(bucketFor(task), task?._id));
 
     const childrenOf = (task) => loaded(task).filter((sub) => (showArchived?.value ? sub.deletedStatusKey === 2 : !sub.deletedStatusKey));
     const hasChildren = (task) => Number(task?.subTasks) > 0 || loaded(task).length > 0;
@@ -33,7 +37,11 @@ export function useSubtaskTree({ project, sprintId, rows, showArchived, searched
     const totalFor = (task) => subtaskTotal(counted(task), counts.value[idOf(task)]);
 
     const withLoadedLevels = (list) => (list || []).flatMap((task) => (task ? [task, ...withLoadedLevels(loaded(task))] : []));
-    const parents = computed(() => withLoadedLevels(rows.value).filter(hasChildren));
+    const parents = computed(() => {
+        const unique = new Map();
+        withLoadedLevels(rows.value).filter(hasChildren).forEach((task) => unique.set(idOf(task), task));
+        return [...unique.values()];
+    });
     const signature = computed(() => parents.value.map((task) => `${idOf(task)}:${Number(task.subTasks) || 0}:${loaded(task).length}`).sort().join(","));
 
     function loadCounts() {
@@ -48,19 +56,22 @@ export function useSubtaskTree({ project, sprintId, rows, showArchived, searched
     /* A Table row lives in the Table's own store. It is put in the tree before its subtasks are
      * read, so they sit under it for everything that walks the tree: the bulk bar's undo, a move. */
     function plant(task) {
-        if (parentIdOf(task) !== "" || (bucket.value && locate(bucket.value, task._id))) return;
-        commit("projectData/mutateTypesenseTasks", { pid: project.value._id, sprintId: sprintId.value, data: { ...task }, nextPage: {}, found: {} });
+        const homeSprintId = homeSprintIdOf(task);
+        const bucket = bucketFor(task);
+        if (!homeSprintId || parentIdOf(task) !== "" || (bucket && locate(bucket, task._id))) return;
+        commit("projectData/mutateTypesenseTasks", { pid: project.value._id, sprintId: homeSprintId, data: { ...task }, nextPage: {}, found: {} });
     }
 
     /* Asked every time a row opens: the store answers at once for a parent whose children it has read. */
     function read(task, item) {
         const current = project.value || {};
         const permit = checkPermission("task.show_tasks", current.isGlobalPermission);
-        if ((permit === null && current.isGlobalPermission === false) || !item) return Promise.resolve();
+        const homeSprintId = homeSprintIdOf(task);
+        if ((permit === null && current.isGlobalPermission === false) || !item || !homeSprintId) return Promise.resolve();
         plant(task);
         return dispatch("projectData/getPaginatedTasks", {
             pid: current._id,
-            sprintId: sprintId.value,
+            sprintId: homeSprintId,
             item,
             fetchNew: true,
             firstPageOnly: true,

@@ -5,9 +5,10 @@
             <span class="opr__count">{{ rows.length }}</span>
         </div>
         <div class="opr__rows" role="list">
-            <component :is="part" v-for="row in rows" :key="row._id" :task="row" :project="cardOf(row)" @open="open">
+            <component :is="part" v-for="row in rows" :key="row.boardListKey || row._id" :task="row" :project="cardOf(row)" @open="open">
                 <template #lists>
-                    <TaskHomeMark :task="row" :list="list" :projects="[cardOf(row)]" />
+                    <span v-if="(aggregateMode || row.boardListCount > 1) && row.boardListName" class="opr__destination" data-board-list :title="row.boardListName">{{ row.boardListName }}</span>
+                    <TaskHomeMark :task="row" :list="listFor(row)" :projects="[cardOf(row)]" />
                 </template>
             </component>
         </div>
@@ -35,6 +36,7 @@ const props = defineProps({
     /** The list on screen: { sprintId, projectId }. */
     list: { type: Object, default: null },
     as: { type: String, default: "row" },
+    aggregateMode: { type: Boolean, default: false },
     heading: { type: Boolean, default: false },
     truncated: { type: Boolean, default: false }
 });
@@ -43,6 +45,9 @@ const { t } = useI18n();
 const companyId = inject("$companyId", ref(""));
 const part = computed(() => (props.as === "card" ? EverythingCard : EverythingRow));
 const cardOf = (row) => readOnlyCard(props.projects[String(row.ProjectID)]);
+const listFor = (row) => (row?.boardListId
+    ? { projectId: row.boardProjectId || props.list?.projectId, sprintId: row.boardListId }
+    : props.list);
 
 function open(task) {
     openTask({ companyId: companyId.value, projectId: task.ProjectID, sprintId: task.sprintId, folderId: task.folderObjId || "", taskId: task._id });
@@ -54,6 +59,7 @@ function open(task) {
 .opr--row { margin-top: 12px; border-top: 1px solid var(--hairline); }
 .opr__head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; color: var(--ink-2); font: 500 var(--fs-sm, 12px) var(--font-ui); }
 .opr__count { font: 500 var(--fs-xs, 11px)/1 var(--font-mono); }
+.opr__destination { display: inline-flex; align-items: center; max-width: 120px; height: 18px; padding: 0 5px; border: 1px solid var(--border); border-radius: var(--r-sm, 6px); color: var(--ink-2); font: 400 var(--fs-xs, 11px) var(--font-ui); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
 .opr--card .opr__rows { display: flex; flex-direction: column; gap: 8px; }
 .opr__note { margin: 0; padding: 6px 12px; color: var(--ink-2); font: 400 var(--fs-xs, 11px) var(--font-ui); }
 </style>
