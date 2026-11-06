@@ -4072,6 +4072,8 @@ export default {
         "calendar_no_tasks_msg": "งานที่มีวันครบกำหนดจะแสดงในวันนั้น เพิ่มงานและกำหนดวันที่เพื่อให้แสดงที่นี่",
         "add_a_task": "เพิ่มงาน",
         "gantt_module_missing": "โหลดโมดูล Gantt ไม่ได้ ติดตั้ง dependency แล้วโหลดใหม่:",
+        "drag_range": "{start} → {end}",
+        "zoom_hint": "กด Ctrl แล้วเลื่อนล้อเมาส์เพื่อซูม",
         "timeline_title": "ไทม์ไลน์",
         "timeline_empty": "ยังไม่มีงานที่จัดเวลา — กำหนดวันเริ่มและวันครบกำหนดเพื่อให้แสดงในไทม์ไลน์",
         "unscheduled_tray": "ไม่ได้กำหนดเวลา ({n})",

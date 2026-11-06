@@ -4095,6 +4095,8 @@ export default {
         calendar_no_tasks_msg: "A task with a due date appears on its day. Add a task and give it a date, and it lands here.",
         add_a_task: "Add a task",
         gantt_module_missing: "The Gantt module could not load. Install the dependency and reload:",
+        drag_range: "{start} → {end}",
+        zoom_hint: "Ctrl + scroll to zoom",
         timeline_title: "Timeline",
         timeline_empty: "No scheduled tasks yet — give a task a start & due date to see it on the timeline.",
         unscheduled_tray: "Unscheduled ({n})",

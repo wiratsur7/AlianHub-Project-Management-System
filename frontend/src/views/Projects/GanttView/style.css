@@ -19,6 +19,17 @@
 .gv__zoom .ah-tab.is-on { background: var(--surface); color: var(--brand); font-weight: 600; }
 .gv__toggle { height: var(--control-h, 28px); }
 .gv__count { color: var(--ink-2); font-size: var(--fs-sm, 11px); }
+.gv__dragtip {
+    position: absolute;
+    pointer-events: none;
+    z-index: 5;
+    white-space: nowrap;
+    background: var(--ink);
+    color: var(--surface);
+    padding: var(--sp-2) var(--sp-4);
+    border-radius: var(--r-chip);
+    font: var(--text-data);
+}
 .gv__spark { color: currentColor; margin-right: 2px; }
 
 .gv__main { position: relative; flex: 1 1 auto; display: flex; min-height: 360px; background: var(--surface); }
