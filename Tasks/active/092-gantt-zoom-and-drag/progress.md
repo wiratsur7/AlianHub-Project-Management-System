@@ -6,11 +6,11 @@
 - [x] Wave 1: independent pieces (backend validation, zoom model, snap helper, i18n and style)
 - [x] Wave 2: integrate GanttView.vue (zoom wiring, snapping, tooltip)
 - [x] Wave 3: tests
-- [ ] Wave 4: gate passed. The manual browser checks 1-9 have not been done yet.
+- [x] Wave 4: the gate passed and the manual browser checks are done. Two checks remain open; see the log.
 
 ## Last step
 
-The automated gate passed on `feat/gantt-zoom-drag`. Manual browser checks and a PR are next.
+Manual browser checks are done on `feat/gantt-zoom-drag`. A PR is next.
 
 ## Blockers
 
@@ -45,3 +45,18 @@ None.
   - Lint passes.
   - Build passes with `NODE_OPTIONS=--max-old-space-size=8192`.
   - On this Windows machine, run the gate steps one at a time.
+- Manual browser checks:
+  - Setup: e2e harness server with a seeded project of 6 dated tasks. Headless Chromium at 1600×1000, using trusted Ctrl+wheel events.
+  - The in-app browser pane was hidden, which slowed requestAnimationFrame to about 1/s. That made zoom ticks merge, so the timing measurements were redone in headless Chromium.
+
+  | # | Check | Result |
+  |---|---|---|
+  | 1 | Date under the cursor while zooming | Holds. 12 fast ticks in: Dec 21 07:12 → 08:49, about 5px. 30 fast ticks out into Month: about 3 days, about 3px. `devicePixelRatio` stays 1 and the page width is unchanged, so the page does not zoom. |
+  | 2 | Band switching | Week → Day → Month in both directions. The tab highlight follows. The Day band shows `13 DEC` columns at 68px. |
+  | 3 | Trackpad pinch | Not tested by hand; the unit tests cover small-delta pinch. |
+  | 4 | Zoom saved on reload | Holds. `gantt.zoom.v1.<projectId>` is written and the zoom is restored after reload. Clicking a tab keeps the left-edge date (same day). |
+  | 5 | Zooming out grows the range | Yes. The range grew to 2021-09 → 2031-01 while the date under the cursor stayed the same. |
+  | 6 | Week-view drag of 0.35 column | Moved by whole days. Nov 26–Dec 10 → Nov 28–Dec 12, saved, and still there after a reload. The tooltip reads `Nov 28 → Dec 12` during the drag and is gone after the drop. No toast. |
+  | 7 | Ctrl+wheel during a drag | Ignored. Column width stayed at 70. |
+  | 8 | Shift dialog | Not checked here: the seed has no dependencies. Covered by `ganttShiftWorkingDays.spec.js`. |
+  | 9 | Day-off shading | 56 shaded day-off cells in the Day band. |
