@@ -7,10 +7,10 @@ const { gantt, handlers, getters, apiRequest, updateDates, updateDatesBatch, sho
     return {
         handlers,
         gantt: {
-            config: { drag_mode: { move: 'move', resize: 'resize' } },
+            config: { drag_mode: { move: 'move', resize: 'resize' }, min_column_width: 40 },
             templates: {},
             dragged,
-            init: () => {},
+            init() { this.$task = document.createElement('div'); },
             render: () => {},
             parse: () => {},
             clearAll: () => {},
@@ -19,6 +19,19 @@ const { gantt, handlers, getters, apiRequest, updateDates, updateDatesBatch, sho
             detachEvent: () => {},
             attachEvent: (name, handler) => { handlers[name] = handler; return name; },
             getTask: (id) => dragged[id],
+            getScale: () => ({ unit: 'day', step: 1, col_width: 40 }),
+            getScrollState: () => ({ x: 0, y: 0, inner_width: 140, inner_height: 0 }),
+            dateFromPos(position) {
+                const date = new Date(this.config.start_date || new Date(2026, 8, 1));
+                date.setDate(date.getDate() + Math.floor(position / 10));
+                return date;
+            },
+            posFromDate(value) {
+                const start = this.config.start_date || new Date(2026, 8, 1);
+                const day = (date) => Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+                return ((day(value) - day(start)) / 86400000) * 10;
+            },
+            scrollTo: () => {},
         },
         getters: {},
         apiRequest: vi.fn(async () => ({ data: { status: false } })),
@@ -86,7 +99,12 @@ const dragBlockerTo = async (wrapper, end) => {
 };
 
 describe('Gantt shift preview and the working-days setting', () => {
-    beforeEach(() => { updateDates.mockClear(); updateDatesBatch.mockClear(); showUndoToast.mockClear(); });
+    beforeEach(() => {
+        updateDates.mockClear();
+        updateDatesBatch.mockClear();
+        showUndoToast.mockClear();
+        window.localStorage.clear();
+    });
 
     it('moves the dragged task by calendar days over a weekend while previewing dependant shifts in working days', async () => {
         const wrapper = await open();

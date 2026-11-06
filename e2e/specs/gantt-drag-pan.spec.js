@@ -6,6 +6,16 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 test.describe('Gantt timeline gestures', () => {
     test.use({ ...asRole('owner'), timezoneId: 'UTC', viewport: { width: 1920, height: 1080 } });
 
+    test.beforeEach(async ({ page }) => {
+        await page.addInitScript(() => {
+            try {
+                for (const key of Object.keys(localStorage)) {
+                    if (key.startsWith('gantt.zoom.v1.')) localStorage.removeItem(key);
+                }
+            } catch {}
+        });
+    });
+
     test('pans through empty timeline space in both directions without changing task dates', async ({ page, state, loginAs }) => {
         const owner = await loginAs('owner');
         const scenario = await createScenario(owner, state, 'pan');
@@ -96,6 +106,35 @@ test.describe('Gantt timeline gestures', () => {
             expect(calendarDay(after.DueDate) - calendarDay(before.DueDate)).toBeGreaterThan(0);
             await expectNoPan(page, nearbyBar, anchorX);
             await reloadAndExpectDates(page, owner.api, scenario.tasks.focus._id, after);
+        } finally {
+            await archiveProject(owner.api, scenario.project._id);
+        }
+    });
+
+    test('ctrl+wheel over the timeline zooms the gantt scale, not the page', async ({ page, state, loginAs }) => {
+        const owner = await loginAs('owner');
+        const scenario = await createScenario(owner, state, 'zoom');
+
+        try {
+            await openChart(page, state, scenario.project);
+            await expect(barFor(page, scenario.tasks.focus._id)).toBeVisible({ timeout: 30000 });
+
+            const timeline = await page.locator('.gv__chart .gantt_task').boundingBox();
+            if (!timeline) throw new Error('Gantt timeline has no layout box');
+            const pageZoom = await page.evaluate(() => ({
+                devicePixelRatio: window.devicePixelRatio,
+                scrollWidth: document.documentElement.scrollWidth,
+            }));
+            const initialCellWidth = await scaleCellWidth(page);
+
+            await page.mouse.move(timeline.x + timeline.width / 2, timeline.y + timeline.height / 2);
+            await page.keyboard.down('Control');
+            await page.mouse.wheel(0, -200);
+            await page.keyboard.up('Control');
+
+            await expect.poll(() => scaleCellWidth(page)).not.toBe(initialCellWidth);
+            expect(await page.evaluate(() => window.devicePixelRatio)).toBe(pageZoom.devicePixelRatio);
+            expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(pageZoom.scrollWidth);
         } finally {
             await archiveProject(owner.api, scenario.project._id);
         }

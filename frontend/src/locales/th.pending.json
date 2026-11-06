@@ -529,6 +529,8 @@
     "TimeTracker.desktop_size_mb": "{n} MB",
     "TimeTracker.desktop_storage_note": "Screenshots count towards your workspace's storage.",
     "TimeTracker.desktop_title": "Desktop time tracker",
-    "TimeTracker.desktop_version": "v{version}"
+    "TimeTracker.desktop_version": "v{version}",
+    "Views.drag_range": "{start} → {end}",
+    "Views.zoom_hint": "กด Ctrl แล้วเลื่อนล้อเมาส์เพื่อซูม"
   }
 }

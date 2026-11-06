@@ -180,7 +180,8 @@
     "Instance.sec_auth_gitlab",
     "Plan.plans.starter",
     "Plan.plans.pro",
-    "Plan.plans.business"
+    "Plan.plans.business",
+    "Views.drag_range"
   ],
   "reason": "Reviewed intentional English values only: brand and service names, protocol and file-format labels, code/URL/regex examples, keyboard legends, units, symbols, and placeholder-only templates."
 }
