@@ -18,8 +18,26 @@ const IMPORTERS = {
     ko: () => import(/* webpackChunkName: "locale-ko" */ "@/locales/ko"),
     ptBr: () => import(/* webpackChunkName: "locale-ptBr" */ "@/locales/ptBr"),
     ru: () => import(/* webpackChunkName: "locale-ru" */ "@/locales/ru"),
+    th: () => import(/* webpackChunkName: "locale-th" */ "@/locales/th"),
     spa: () => import(/* webpackChunkName: "locale-spa" */ "@/locales/spa")
 };
+
+const CALENDAR_LOCALE_IMPORTERS = {
+    th: () => import(/* webpackChunkName: "calendar-locale-th" */ "@fullcalendar/core/locales/th")
+};
+const calendarLocaleRequests = new Map();
+
+export function loadCalendarLocale(code) {
+    const importer = CALENDAR_LOCALE_IMPORTERS[code];
+    if (!importer) return Promise.resolve(code || FALLBACK_LOCALE);
+    if (!calendarLocaleRequests.has(code)) {
+        calendarLocaleRequests.set(code, importer().then((file) => file.default || file).catch((error) => {
+            calendarLocaleRequests.delete(code);
+            throw error;
+        }));
+    }
+    return calendarLocaleRequests.get(code);
+}
 
 export const LAZY_LOCALES = Object.keys(IMPORTERS);
 

@@ -276,6 +276,7 @@ import timeZoneOption from "./timezoneArray.js";
 import languageOptions from "@/utils/languagesName.json";
 import { useGetterFunctions, languageTranslateHelper } from "@/composable";
 import { switchLocale } from "@/locales/main";
+import { formatDisplayDate, savePrefs } from "@/views/Settings/Language/localePrefs";
 import { apiRequest, apiRequestWithoutCompnay } from "@/services";
 import { unitCapacity as cleanUnitCapacity } from "@/views/Projects/WorkloadView/workloadUnits";
 import { storageQueryBuilder, generateFileName } from "@/utils/storageQueryBuild.js";
@@ -372,7 +373,7 @@ const joined = computed(() => {
     const raw = companyUser.value.createdAt || companyUser.value.sendInvitationTime;
     if (!raw) return "";
     const d = new Date(raw);
-    return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString(undefined, { month: "short", year: "numeric" });
+    return Number.isNaN(d.getTime()) ? "" : formatDisplayDate(d, "MMM YYYY");
 });
 const fullName = computed(() => `${formData.value.firstName} ${formData.value.lastName}`.trim());
 const initial = computed(() => (formData.value.firstName || formData.value.email || "?").charAt(0).toUpperCase());
@@ -453,6 +454,7 @@ async function applyLanguage() {
         throw new Error(t("Toast.Language_not_updated!"));
     }
     localStorage.setItem("language", selectedLanguageCode.value);
+    savePrefs({ language: selectedLanguageCode.value });
 }
 
 async function saveChanges() {

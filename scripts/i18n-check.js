@@ -13,6 +13,7 @@ const ROOT = path.join(__dirname, '..');
 const LOCALES_DIR = path.join(ROOT, 'frontend', 'src', 'locales');
 const SRC_DIR = path.join(ROOT, 'frontend', 'src');
 const ALLOWLIST = path.join(__dirname, 'i18n-allowlist.json');
+const THAI_ALLOWLIST = path.join(__dirname, 'i18n-th-allowlist.json');
 const SOURCE_LOCALE = 'en';
 
 /* Locale modules are `export default {...}` object literals, some spreading a
@@ -47,6 +48,18 @@ function flatten(obj, prefix = '', out = {}) {
     return out;
 }
 
+function readThaiAllowlist() {
+    try {
+        const parsed = JSON.parse(fs.readFileSync(THAI_ALLOWLIST, 'utf8'));
+        return new Set(Array.isArray(parsed.keys) ? parsed.keys : []);
+    } catch (error) {
+        return new Set();
+    }
+}
+
+const placeholdersOf = (value) => (typeof value === 'string' ? (value.match(/\{(?:[A-Za-z_][\w.-]*|\d+)\}/g) || []).sort() : []);
+const pluralFormsOf = (value) => (typeof value === 'string' ? value.split('|').length : 1);
+
 function localeFiles() {
     return fs.readdirSync(LOCALES_DIR)
         .filter((name) => /^[a-zA-Z]+\.js$/.test(name) && name !== 'main.js')
@@ -59,11 +72,34 @@ function checkLocales() {
     if (!source) throw new Error(`${SOURCE_LOCALE}.js not found in ${LOCALES_DIR}`);
     const sourceKeys = flatten(loadLocale(source.file));
     const keys = Object.keys(sourceKeys);
+    const thaiAllowlist = readThaiAllowlist();
     return locales.filter((l) => l.code !== SOURCE_LOCALE).map((l) => {
         const own = flatten(loadLocale(l.file));
         const missing = keys.filter((k) => !(k in own));
         const extra = Object.keys(own).filter((k) => !(k in sourceKeys));
-        return { code: l.code, total: keys.length, present: keys.length - missing.length, missing, extra };
+        if (l.code !== 'th') return { code: l.code, total: keys.length, present: keys.length - missing.length, missing, extra, untranslated: [], placeholderMismatches: [], pluralMismatches: [] };
+        const untranslated = keys.filter((k) => typeof sourceKeys[k] === 'string'
+            && sourceKeys[k].trim()
+            && sourceKeys[k] === own[k]
+            && !thaiAllowlist.has(k));
+        const placeholderMismatches = keys.filter((k) => k in own
+            && JSON.stringify(placeholdersOf(sourceKeys[k])) !== JSON.stringify(placeholdersOf(own[k])))
+            .map((key) => ({ key, source: placeholdersOf(sourceKeys[key]), target: placeholdersOf(own[key]) }));
+        const pluralMismatches = keys.filter((k) => k in own
+            && typeof sourceKeys[k] === 'string'
+            && sourceKeys[k].includes('|')
+            && pluralFormsOf(sourceKeys[k]) !== pluralFormsOf(own[k]))
+            .map((key) => ({ key, source: pluralFormsOf(sourceKeys[key]), target: pluralFormsOf(own[key]) }));
+        return {
+            code: l.code,
+            total: keys.length,
+            present: keys.length - missing.length,
+            missing,
+            extra,
+            untranslated,
+            placeholderMismatches,
+            pluralMismatches
+        };
     });
 }
 
@@ -200,13 +236,35 @@ function main(argv) {
     const { over, shrinkable } = compareToAllowlist(scan, readAllowlist());
     const hardcodedTotal = Object.values(scan).reduce((n, list) => n + list.length, 0);
     const failing = locales.filter((l) => l.missing.length);
+    const thai = locales.find((l) => l.code === 'th');
+    const thaiCatalogMissing = !thai;
+    const thaiQualityFailed = thaiCatalogMissing || thai.untranslated.length || thai.placeholderMismatches.length || thai.pluralMismatches.length;
     const brokenPending = checkPending();
 
     if (json) {
-        console.log(JSON.stringify({ locales: locales.map((l) => ({ code: l.code, present: l.present, total: l.total, missing: l.missing.length, extra: l.extra.length })), hardcoded: { files: Object.keys(scan).length, findings: hardcodedTotal, over } }, null, 2));
+        console.log(JSON.stringify({
+            locales: locales.map((l) => ({
+                code: l.code,
+                present: l.present,
+                total: l.total,
+                missing: l.missing.length,
+                extra: l.extra.length,
+                ...(l.code === 'th' ? { untranslated: l.untranslated.length, placeholderMismatches: l.placeholderMismatches.length, pluralMismatches: l.pluralMismatches.length } : {})
+            })),
+            thaiCatalogPresent: !thaiCatalogMissing,
+            hardcoded: { files: Object.keys(scan).length, findings: hardcodedTotal, over }
+        }, null, 2));
     } else {
         console.log('Locale coverage against en.js');
-        locales.forEach((l) => console.log(`  ${l.code.padEnd(5)} ${String(l.present).padStart(5)}/${l.total}  missing ${l.missing.length}  obsolete ${l.extra.length}`));
+        locales.forEach((l) => console.log('  ' + l.code.padEnd(5) + ' ' + String(l.present).padStart(5) + '/' + l.total + '  missing ' + l.missing.length + '  obsolete ' + l.extra.length
+            + (l.code === 'th' ? '  English values ' + l.untranslated.length + '  placeholder mismatches ' + l.placeholderMismatches.length + '  plural mismatches ' + l.pluralMismatches.length : '')));
+        if (thaiCatalogMissing) console.error('  th.js is missing. Add and register a complete Thai catalog.');
+        if (thai && thaiQualityFailed) {
+            thai.untranslated.slice(0, 15).forEach((key) => console.error('  th: untranslated ' + key));
+            thai.placeholderMismatches.slice(0, 15).forEach(({ key, source, target }) => console.error('  th: placeholders ' + key + ' ' + JSON.stringify(source) + ' != ' + JSON.stringify(target)));
+            thai.pluralMismatches.slice(0, 15).forEach(({ key, source, target }) => console.error('  th: plural forms ' + key + ' ' + source + ' != ' + target));
+            console.error('  Add only intentional brand/technical terms to scripts/i18n-th-allowlist.json.');
+        }
         console.log(`Hardcoded template text: ${hardcodedTotal} finding(s) in ${Object.keys(scan).length} file(s)${write ? ' — allowlist written' : ''}`);
         over.forEach((o) => {
             console.log(`  ${o.file}: ${o.found} > ${o.allowed} allowed`);
@@ -219,9 +277,9 @@ function main(argv) {
     }
     if (over.length) console.error(`\n${over.length} file(s) added hardcoded text. Wrap it in $t() or, for a deliberate exception, raise scripts/i18n-allowlist.json.`);
     brokenPending.forEach((p) => console.error(`\n${p.file} is not valid pending JSON (${p.error}). Keep both sides' keys, then run: npm run i18n:backfill`));
-    return failing.length || over.length || brokenPending.length ? 1 : 0;
+    return failing.length || thaiQualityFailed || over.length || brokenPending.length ? 1 : 0;
 }
 
-module.exports = { loadLocale, flatten, localeFiles, checkLocales, checkPending,scanTemplate, scanHardcoded, readAllowlist, compareToAllowlist, writeAllowlist, SOURCE_LOCALE, LOCALES_DIR };
+module.exports = { loadLocale, flatten, localeFiles, checkLocales, checkPending, scanTemplate, scanHardcoded, readAllowlist, readThaiAllowlist, compareToAllowlist, writeAllowlist, placeholdersOf, pluralFormsOf, SOURCE_LOCALE, LOCALES_DIR };
 
 if (require.main === module) process.exit(main(process.argv.slice(2)));

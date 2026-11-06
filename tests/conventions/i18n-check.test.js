@@ -7,13 +7,22 @@ describe('locale coverage', () => {
     const locales = checkLocales();
 
     test('every locale file loads and is compared', () => {
-        expect(locales.length).toBeGreaterThanOrEqual(13);
+        expect(locales.length).toBeGreaterThanOrEqual(14);
+        expect(locales.some((locale) => locale.code === 'th')).toBe(true);
     });
 
     test.each(locales.map((l) => [l.code, l]))('%s has every key en.js has', (_code, locale) => {
         if (locale.missing.length) {
             throw new Error(`${locale.missing.length} key(s) missing, e.g. ${locale.missing.slice(0, 5).join(', ')} — run npm run i18n:backfill`);
         }
+    });
+
+    test('Thai translations keep source placeholders and plural form counts', () => {
+        const thai = locales.find((locale) => locale.code === 'th');
+        expect(thai).toBeDefined();
+        expect(thai.untranslated).toEqual([]);
+        expect(thai.placeholderMismatches).toEqual([]);
+        expect(thai.pluralMismatches).toEqual([]);
     });
 });
 

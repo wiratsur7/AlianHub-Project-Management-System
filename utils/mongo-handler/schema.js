@@ -2796,6 +2796,7 @@ const schema = {
             language: { type: String, required: false },
             numerals: { type: String, required: false },
             dateFormat: { type: String, required: false },
+            calendar: { type: String, required: false },
             numberFormat: { type: String, required: false },
             weekStart: { type: String, required: false },
             currency: { type: String, required: false }

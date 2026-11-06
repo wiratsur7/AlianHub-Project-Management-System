@@ -20,13 +20,13 @@ const source = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'vi
 const defaultsBlock = (source.match(/const DEFAULTS = \{([\s\S]*?)\};/) || [])[1] || '';
 const DEFAULTS = Object.fromEntries([...defaultsBlock.matchAll(/(\w+):\s*"([^"]*)"/g)].map((m) => [m[1], m[2]]));
 
-const SAVED = { ...DEFAULTS, language: 'ar', numerals: 'arab', dateFormat: 'YYYY-MM-DD', numberFormat: '1.250.000,50', weekStart: 'saturday', currency: 'AED' };
+const SAVED = { ...DEFAULTS, language: 'ar', numerals: 'arab', dateFormat: 'YYYY-MM-DD', calendar: 'buddhist', numberFormat: '1.250.000,50', weekStart: 'saturday', currency: 'AED' };
 
 describe('the language and region preferences survive the strict user schema', () => {
     const Users = mongoose.models.LocalePrefsUser || mongoose.model('LocalePrefsUser', new mongoose.Schema(schema.users, { strict: true, timestamps: true }));
 
     it('reads every field the Language page saves (the scan works)', () => {
-        expect(Object.keys(DEFAULTS).sort()).toEqual(['currency', 'dateFormat', 'language', 'numberFormat', 'numerals', 'weekStart']);
+        expect(Object.keys(DEFAULTS).sort()).toEqual(['calendar', 'currency', 'dateFormat', 'language', 'numberFormat', 'numerals', 'weekStart']);
         expect(Object.keys(SAVED).sort()).toEqual(Object.keys(DEFAULTS).sort());
     });
 

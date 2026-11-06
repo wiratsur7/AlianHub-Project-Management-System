@@ -29,6 +29,10 @@
                     <select id="lang-date" v-model="form.dateFormat" class="ah-input">
                         <option v-for="format in dateFormats" :key="format" :value="format">{{ format }}</option>
                     </select>
+                    <label class="lang__row-label" for="lang-calendar">{{ $t('Language.calendar') }}</label>
+                    <select id="lang-calendar" v-model="form.calendar" class="ah-input">
+                        <option v-for="calendar in calendars" :key="calendar" :value="calendar">{{ $t('Language.calendar_' + calendar) }}</option>
+                    </select>
                     <label class="lang__row-label" for="lang-week">{{ $t('Language.week_starts') }}</label>
                     <select id="lang-week" v-model="form.weekStart" class="ah-input">
                         <option v-for="day in weekStarts" :key="day" :value="day">{{ $t('Language.' + day) }}</option>
@@ -124,12 +128,16 @@ import {
     LOCALES,
     NUMERAL_SYSTEMS,
     DATE_FORMATS,
+    CALENDARS,
     NUMBER_FORMATS,
     WEEK_STARTS,
+    CURRENCIES,
     localePrefs,
+    effectiveDateFormat,
+    hasLocalePreference,
     savePrefs,
     formatDate,
-    formatNumber
+    formatCurrency
 } from "./localePrefs";
 
 defineOptions({ name: "LanguageRegion" });
@@ -138,14 +146,18 @@ const { t, messages } = useI18n({ useScope: "global" });
 const { commit } = useStore();
 const userId = inject("$userId");
 
-const currencies = ["USD", "EUR", "GBP", "INR", "JPY", "AUD", "CAD", "AED"];
+const currencies = CURRENCIES;
 const locales = LOCALES;
 const numeralSystems = NUMERAL_SYSTEMS;
 const dateFormats = DATE_FORMATS;
+const calendars = CALENDARS;
 const numberFormats = NUMBER_FORMATS;
 const weekStarts = WEEK_STARTS;
 
-const form = reactive({ ...localePrefs });
+const form = reactive({
+    ...localePrefs,
+    dateFormat: hasLocalePreference("dateFormat") ? localePrefs.dateFormat : effectiveDateFormat()
+});
 const saving = ref(false);
 const savedAt = ref(0);
 const error = ref("");
@@ -154,9 +166,9 @@ const SAMPLE_DATE = new Date(2026, 8, 4);
 const SAMPLE_MONEY = 1425.2;
 
 const sampleDateLatin = computed(() => formatDate(SAMPLE_DATE, { ...form, numerals: "latn" }));
-const sampleMoneyLatin = computed(() => `$${formatNumber(SAMPLE_MONEY, { ...form, numerals: "latn" })}`);
+const sampleMoneyLatin = computed(() => formatCurrency(SAMPLE_MONEY, { ...form, numerals: "latn" }));
 const sampleDateArab = computed(() => formatDate(SAMPLE_DATE, { ...form, numerals: "arab" }));
-const sampleMoneyArab = computed(() => `${formatNumber(SAMPLE_MONEY, { ...form, numerals: "arab" })} $`);
+const sampleMoneyArab = computed(() => formatCurrency(SAMPLE_MONEY, { ...form, numerals: "arab" }));
 
 // The right-to-left preview is worded in Arabic whatever language is in use; until its file
 // arrives, or if it cannot be fetched, the English samples below stand in.

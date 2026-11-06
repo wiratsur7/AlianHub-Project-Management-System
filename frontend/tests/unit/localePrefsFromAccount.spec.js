@@ -5,8 +5,8 @@ vi.mock('@/composable', () => ({ useCustomComposable: () => ({}) }));
 vi.mock('@/offline', () => ({ clearOffline: vi.fn(), registerReplayer: vi.fn() }));
 
 const STORAGE_KEY = 'ah_locale_prefs';
-const SERVER = { language: 'ar', numerals: 'arab', dateFormat: 'YYYY-MM-DD', numberFormat: '1.250.000,50', weekStart: 'saturday', currency: 'AED' };
-const LOCAL = { language: 'fr', numerals: 'latn', dateFormat: 'MM/DD/YYYY', numberFormat: '1 250 000,50', weekStart: 'sunday', currency: 'EUR' };
+const SERVER = { language: 'ar', numerals: 'arab', dateFormat: 'YYYY-MM-DD', calendar: 'gregory', numberFormat: '1.250.000,50', weekStart: 'saturday', currency: 'AED' };
+const LOCAL = { language: 'fr', numerals: 'latn', dateFormat: 'MM/DD/YYYY', calendar: 'gregory', numberFormat: '1 250 000,50', weekStart: 'sunday', currency: 'EUR' };
 
 const stored = () => JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
 const load = async () => {
@@ -30,6 +30,108 @@ describe('language settings follow the person, not the browser', () => {
         expect(stored()).toMatchObject(SERVER);
         expect(document.documentElement.getAttribute('dir')).toBe('rtl');
         expect(prefs.formatNumber(1250)).toBe('١.٢٥٠,٠٠');
+    });
+
+    it('formats Thai numerals and selectable Buddhist years for display only', async () => {
+        const prefs = await load();
+        const date = new Date(2026, 8, 4);
+
+        expect(prefs.toNumerals('0123456789', 'thai')).toBe('๐๑๒๓๔๕๖๗๘๙');
+        expect(prefs.formatDate(date, { language: 'th', dateFormat: 'DD/MM/YYYY', calendar: 'buddhist', numerals: 'thai' }))
+            .toBe('๐๔/๐๙/๒๕๖๙');
+        expect(prefs.formatDate(date, { language: 'th', dateFormat: 'DD/MM/YYYY', calendar: 'gregory', numerals: 'latn' }))
+            .toBe('04/09/2026');
+        expect(prefs.formatDisplayDate(date, 'D MMM YYYY', { language: 'th', calendar: 'buddhist', numerals: 'latn' }))
+            .toContain('ก.ย.');
+    });
+
+    it('formats Thai numerals with the selected number grouping', async () => {
+        const prefs = await load();
+        expect(prefs.formatDisplayNumber(1234567.5, {
+            numberFormat: '1,25,000.50',
+            numerals: 'thai'
+        })).toBe('๑๒,๓๔,๕๖๗.๕');
+    });
+
+    it('formats THB without converting the input value', async () => {
+        const prefs = await load();
+        const formatted = prefs.formatCurrency(1425.2, {
+            language: 'th',
+            currency: 'THB',
+            numberFormat: '1,250,000.50',
+            numerals: 'latn'
+        });
+
+        expect(formatted).toContain('฿');
+        expect(formatted).toContain('1,425.20');
+        expect(prefs.formatCurrency(-1425.2, {
+            language: 'th',
+            currency: 'THB',
+            numberFormat: '1,250,000.50',
+            numerals: 'latn'
+        })).toMatch(/-.*1,425\.20/);
+        expect(prefs.formatCurrency(1425.2, {
+            language: 'th',
+            currency: 'JPY',
+            numberFormat: '1,250,000.50',
+            numerals: 'latn'
+        })).toContain('1,425');
+        expect(prefs.formatCurrency(1425.2, {
+            language: 'th',
+            currency: 'JPY',
+            numberFormat: '1,250,000.50',
+            numerals: 'latn'
+        })).not.toContain('.');
+        expect(prefs.formatCurrency('not-a-number', { language: 'th', currency: 'THB' })).toBe('');
+    });
+
+    it('keeps the workspace date format until a personal date format is chosen', async () => {
+        const prefs = await load();
+        const date = new Date(2026, 8, 4);
+        prefs.setWorkspaceDateFormat('DD-MM-YYYY');
+
+        prefs.savePrefs({ language: 'th' });
+        expect(prefs.effectiveDateFormat()).toBe('DD-MM-YYYY');
+        expect(prefs.formatDisplayDate(date)).toBe('04-09-2026');
+
+        prefs.savePrefs({ dateFormat: 'MM-DD-YYYY' });
+        expect(prefs.effectiveDateFormat()).toBe('MM-DD-YYYY');
+    });
+
+    it('treats ISO date-only strings as local calendar dates for display', async () => {
+        const prefs = await load();
+        expect(prefs.formatDisplayDate('2026-09-04', 'YYYY-MM-DD', {
+            language: 'en',
+            calendar: 'gregory',
+            numerals: 'latn'
+        })).toBe('2026-09-04');
+    });
+
+    it('localizes relative-time labels and respects the selected numerals', async () => {
+        const prefs = await load();
+        const options = { language: 'th', calendar: 'gregory', numerals: 'thai' };
+        const withSuffix = prefs.formatRelativeTime(Date.now() - 2 * 60 * 60 * 1000, false, options);
+        const withoutSuffix = prefs.formatRelativeTime(Date.now() - 2 * 60 * 60 * 1000, true, options);
+
+        expect(withSuffix).toContain('๒ ชั่วโมง');
+        expect(withSuffix).toContain('ที่แล้ว');
+        expect(withoutSuffix).toContain('๒ ชั่วโมง');
+    });
+
+    it('keeps existing regional preferences when the account language changes to Thai', async () => {
+        const existing = { language: 'fr', numerals: 'latn', dateFormat: 'MM/DD/YYYY', calendar: 'gregory', numberFormat: '1 250 000,50', weekStart: 'sunday', currency: 'EUR' };
+        const prefs = await load();
+        const result = prefs.adoptAccountPrefs({
+            _id: 'user-b',
+            languageCode: 'th',
+            localePreferences: existing
+        });
+
+        expect(result.language).toBe('th');
+        expect(prefs.localePrefs.language).toBe('th');
+        expect(prefs.localePrefs.calendar).toBe('gregory');
+        expect(prefs.localePrefs.currency).toBe('EUR');
+        expect(prefs.localePrefs.numberFormat).toBe(existing.numberFormat);
     });
 
     it('the account copy wins over what this browser had', async () => {

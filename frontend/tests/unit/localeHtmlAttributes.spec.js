@@ -27,4 +27,10 @@ describe('<html> follows the active language', () => {
         await switchLocale('ptBr');
         expect(html.lang).toBe('pt-BR');
     });
+
+    it('uses the Thai regional tag and keeps left-to-right direction', async () => {
+        await switchLocale('th');
+        expect(html.lang).toBe('th-TH');
+        expect(html.dir).toBe('ltr');
+    });
 });

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import { createI18n } from 'vue-i18n';
-import { createLocaleLoader, LAZY_LOCALES, START_TIMEOUT_MS, RETRY_DELAYS_MS } from '@/utils/localeLoader';
+import { createLocaleLoader, loadCalendarLocale, LAZY_LOCALES, START_TIMEOUT_MS, RETRY_DELAYS_MS } from '@/utils/localeLoader';
 
 const SRC = path.resolve(__dirname, '../../src');
 const LOCALES_DIR = path.join(SRC, 'locales');
@@ -149,6 +149,15 @@ describe('the language chosen at start', () => {
         expect(await applyStoredLocale()).toBe('en');
         expect(current()).toBe('en');
         expect(importers.fr).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('calendar locale loading', () => {
+    it('loads and caches the Thai FullCalendar locale only when requested', async () => {
+        const thai = await loadCalendarLocale('th');
+        expect(thai.code).toBe('th');
+        expect(await loadCalendarLocale('th')).toBe(thai);
+        expect(await loadCalendarLocale('en')).toBe('en');
     });
 });
 

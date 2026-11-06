@@ -107,7 +107,7 @@ import { away, initOffline, pageUnavailable } from '@/offline';
 import { dropWorkerRuntimeCaches } from '@/serviceWorker/registration';
 import * as env from '@/config/env';
 import {tabSyncHelper} from '@/utils/tabSyncs.js';
-import { adoptAccountPrefs } from '@/views/Settings/Language/localePrefs';
+import { adoptAccountPrefs, localePrefs, hasLocalePreference, effectiveDateFormat, setWorkspaceDateFormat } from '@/views/Settings/Language/localePrefs';
 import { followClockPrefs } from '@/utils/clockText';
 import { CommandPalette, QuickCreateTask, TaskTemplateDialogHost, AiFieldFillDialog } from '@/config/shellParts';
 const AiOffPage = defineAsyncComponent(() => import(/* webpackChunkName: "ai" */ '@/views/Ai/AiOffPage.vue'));
@@ -130,7 +130,13 @@ const clientWidth = ref(document.documentElement.clientWidth);
 const userId = ref('');
 const router = useRouter();
 const route = useRoute();
-const dateFormat = ref("DD/MM/YYYY");
+const workspaceDateFormat = ref(getters['settings/companyDateFormat']?.dateFormat || "DD/MM/YYYY");
+const dateFormat = computed(() => {
+    const personalPattern = localePrefs.dateFormat;
+    const workspacePattern = workspaceDateFormat.value;
+    setWorkspaceDateFormat(workspacePattern);
+    return hasLocalePreference("dateFormat") ? personalPattern : workspacePattern;
+});
 const isAdvanceSearch = ref(false);
 const openReleaseNoteModel = ref(false);
 const defaultImageUser = require("@/assets/images/default_user.png")
@@ -153,8 +159,12 @@ watch(() => [logged.value, currentCompany.value?._id], ([isLogged, cid]) => {
 
 watch(() => currentCompany.value?.planFeature, trackAiPlan, { immediate: true, deep: true });
 
-watch(() => [currentUser.value?.Time_Format, getters['settings/companyDateFormat']?.dateFormat], ([timeFormat, dateFormat]) => {
-    followClockPrefs({ timeFormat, dateFormat });
+watch(() => [currentUser.value?.Time_Format, getters['settings/companyDateFormat']?.dateFormat, localePrefs.dateFormat], ([timeFormat, workspacePattern]) => {
+    if (workspacePattern) {
+        workspaceDateFormat.value = workspacePattern;
+        setWorkspaceDateFormat(workspacePattern);
+    }
+    followClockPrefs({ timeFormat, dateFormat: effectiveDateFormat() });
 }, { immediate: true });
 
 watch(() => currentUser.value, (val) => {
@@ -429,7 +439,8 @@ async function getFirebaseData() {
                         if(getters['settings/companyDateFormat'] && !getters['settings/companyDateFormat'].length) {
                             dispatch('settings/setCompayDateFormat', companyId.value)
                             .then((res) => {
-                                dateFormat.value = res?.settings[0].dateFormat || "DD-MM-YYYY"
+                                workspaceDateFormat.value = res?.settings[0].dateFormat || "DD-MM-YYYY"
+                                setWorkspaceDateFormat(workspaceDateFormat.value)
                             })
                             .catch((error) => {
                                 console.error("ERROR in set Compay Date Format: ", error)
