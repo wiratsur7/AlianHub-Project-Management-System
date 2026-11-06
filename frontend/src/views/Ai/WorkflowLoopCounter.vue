@@ -34,6 +34,7 @@
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { loopStateOf } from "./workflowRun";
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 defineOptions({ name: "WorkflowLoopCounter" });
 
@@ -65,7 +66,7 @@ const stoppedLabel = computed(() => {
         return t("Workflows.loop_stopped_run_limit_detail", {
             used: Number(limit.used) || 0,
             limit: Number(limit.limit) || 0,
-            at: limit.resetsAt ? new Date(limit.resetsAt).toLocaleString() : ""
+            at: limit.resetsAt ? formatDisplayDate(limit.resetsAt, 'L h:mm A') : ""
         });
     }
     return t(`Workflows.loop_stopped_${loop.value.stoppedBy}`);

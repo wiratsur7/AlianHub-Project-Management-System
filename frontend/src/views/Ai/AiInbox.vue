@@ -238,6 +238,7 @@ import { useStore } from "vuex";
 import { useI18n } from "vue-i18n";
 import { useToast } from "vue-toast-notification";
 import moment from "moment";
+import { formatRelativeTime } from '@/views/Settings/Language/localePrefs';
 import { clockText } from "@/utils/clockText";
 import ShellIcon from "@/components/organisms/Shell/ShellIcon.vue";
 import EmptyState from "@/components/atom/EmptyState/EmptyState.vue";
@@ -373,7 +374,7 @@ const tabs = computed(() => [
 
 const decidedLine = computed(() => {
     const p = selected.value || {};
-    return t("Ai.decided_line", { status: t(`Ai.status_${p.status || "pending"}`), at: p.decidedAt ? moment(p.decidedAt).fromNow() : "" });
+    return t("Ai.decided_line", { status: t(`Ai.status_${p.status || "pending"}`), at: p.decidedAt ? formatRelativeTime(p.decidedAt) : "" });
 });
 
 const SLACK_POST = "slack.message.post";
@@ -395,7 +396,7 @@ const costLine = computed(() => {
 const shortTime = (at) => {
     if (!at) return "";
     const m = moment(at);
-    return m.isSame(moment(), "day") ? clockText(m) : m.fromNow();
+    return m.isSame(moment(), "day") ? clockText(m) : formatRelativeTime(at);
 };
 
 watch(selectedApproval, () => { approvalError.value = ""; });

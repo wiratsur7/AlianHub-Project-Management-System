@@ -1,3 +1,5 @@
+import { localePrefs, localeTagOf, toNumerals } from '@/views/Settings/Language/localePrefs';
+
 export const REPORT_KEYS = Object.freeze(["daily_briefing", "deadline_watch", "mentions_digest", "weekly_status"]);
 export const EVERY = Object.freeze(["daily", "weekdays", "weekly"]);
 export const WEEKDAYS = Object.freeze([1, 2, 3, 4, 5, 6, 0]);
@@ -68,9 +70,16 @@ export const describeSchedule = (t, s) => {
     return t(`Ai.schedule_every_${s.every === "daily" ? "daily" : "weekdays"}`, { at: s.at, zone });
 };
 
-export const formatInZone = (at, timeZone, locale) => {
+export const formatInZone = (at, timeZone, locale, prefs = localePrefs) => {
     const options = { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false };
-    try { return new Intl.DateTimeFormat(locale, { ...options, timeZone }).format(new Date(at)); } catch (e) { return new Intl.DateTimeFormat(locale, options).format(new Date(at)); }
+    const dateLocale = localeTagOf(locale || prefs.language);
+    const format = (zone) => new Intl.DateTimeFormat(dateLocale, {
+        ...options,
+        timeZone: zone,
+        calendar: prefs.calendar || 'gregory',
+        numberingSystem: 'latn'
+    }).format(new Date(at));
+    try { return toNumerals(format(timeZone), prefs.numerals); } catch (e) { return toNumerals(format(undefined), prefs.numerals); }
 };
 
 export const nextRunText = (t, s, { locale } = {}) => {

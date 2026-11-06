@@ -46,6 +46,7 @@ import { buildFilterQuery } from '@/composable/commonFunction';
 import CardSkeleton from '@/components/atom/CardSkeleton/CardSkeleton.vue';
 import TaskDetail from '@/views/TaskDetail/TaskDetail.vue';
 import { useI18n } from 'vue-i18n';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 const { t: translate } = useI18n();
 // Member self-card — my open tasks ordered by due date then priority.
@@ -78,7 +79,7 @@ const dueLabel = (t) => {
     if (diff === 1) return translate('dashboardCard.Tomorrow');
     if (diff === -1) return translate('dashboardCard.Yesterday');
     if (diff < 0) return translate('dashboardCard.overdue_days', { n: Math.abs(diff) });
-    return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+    return formatDisplayDate(d, 'D MMM');
 };
 
 const load = async () => {

@@ -35,6 +35,7 @@ import { useI18n } from 'vue-i18n';
 import { apiRequest } from '@/services';
 import { downloadReportPdf, chartImage } from './reportsPdf';
 import { sprintChoices, dayLabel } from './composables/agileReports';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 const props = defineProps({
     projectData: { type: Object, default: () => ({}) },
@@ -56,7 +57,7 @@ const hasData = computed(() => !!(data.value && data.value.days && data.value.da
 const shortDate = (value) => {
     if (!value) return '';
     const d = new Date(value);
-    return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+    return Number.isNaN(d.getTime()) ? '' : formatDisplayDate(d, 'D MMM');
 };
 
 const box = computed(() => {

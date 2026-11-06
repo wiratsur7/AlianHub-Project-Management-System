@@ -90,6 +90,7 @@ import { computed, ref, inject } from 'vue';
 import { useRouter } from 'vue-router';
 import { away, isOnline, pendingCount, syncing, queue, conflicts, attempt, retryIn, retryNow, resolveConflict } from '@/offline';
 import { RETRY_EVERY_MS } from '@/offline/offlineRules';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 defineOptions({ name: 'OfflineBanner' });
 
@@ -109,7 +110,7 @@ const oldest = computed(() => {
 
 const stamp = (ms) => {
     const d = new Date(ms || 0);
-    return Number.isNaN(d.getTime()) || !ms ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return Number.isNaN(d.getTime()) || !ms ? '' : formatDisplayDate(d, 'HH:mm');
 };
 const valueOf = (v) => {
     if (v && typeof v === 'object') return v.text || v.name || v.key || JSON.stringify(v);

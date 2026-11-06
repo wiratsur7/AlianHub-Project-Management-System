@@ -49,6 +49,7 @@ import { useI18n } from 'vue-i18n';
 import { apiRequest } from '@/services';
 import * as env from '@/config/env';
 import ReportsTabs from './ReportsTabs.vue';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 defineOptions({ name: 'MilestonesReportPage' });
 
@@ -70,7 +71,7 @@ const headline = computed(() => t('Reports.milestones_summary', {
 const fullDate = (ms) => {
     if (!ms) return '—';
     const d = new Date(Number(ms));
-    return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+    return Number.isNaN(d.getTime()) ? '—' : formatDisplayDate(d, 'D MMM');
 };
 
 const subLine = (row) => {

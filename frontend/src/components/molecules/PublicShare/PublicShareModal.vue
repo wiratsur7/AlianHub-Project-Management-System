@@ -84,6 +84,7 @@ import { useFocusTrap } from '@/composable/useFocusTrap';
 import { useDialogEscape } from '@/composable/useDialogEscape';
 import ShellIcon from '@/components/organisms/Shell/ShellIcon.vue';
 import WhoCanSeeModal from '@/components/molecules/WhoCanSee/WhoCanSeeModal.vue';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 defineOptions({ name: 'PublicShareModal' });
 
@@ -229,7 +230,7 @@ function deleteShare() {
 }
 
 function formatDate(d) {
-    return d ? new Date(d).toLocaleDateString() : '';
+    return d ? formatDisplayDate(d) : '';
 }
 </script>
 

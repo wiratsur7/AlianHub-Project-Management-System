@@ -58,6 +58,7 @@ export default { name: 'SprintReport' };
 import { ref, computed, watch, onMounted, defineProps } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { apiRequest } from '@/services';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 const props = defineProps({
     projectData: { type: Object, default: () => ({}) },
@@ -87,7 +88,7 @@ const cards = computed(() => (report.value ? [
 const short = (value) => {
     if (!value) return '';
     const d = new Date(value);
-    return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+    return Number.isNaN(d.getTime()) ? '' : formatDisplayDate(d, 'D MMM');
 };
 
 const range = computed(() => {

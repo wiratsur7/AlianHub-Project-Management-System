@@ -198,6 +198,7 @@ import * as env from "@/config/env";
 import { apiRequest } from "@/services";
 import AhSwitch from "@/components/molecules/Setting/AhSwitch.vue";
 import ShellIcon from "@/components/organisms/Shell/ShellIcon.vue";
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 defineOptions({ name: "SsoSettingsView" });
 
@@ -253,7 +254,7 @@ const domainRecords = computed(() => (savedConfig.value && Array.isArray(savedCo
 
 const shortDate = (value) => {
     const d = new Date(value);
-    return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+    return Number.isNaN(d.getTime()) ? "" : formatDisplayDate(d, 'D MMM YYYY');
 };
 
 const initiateUrl = computed(() => `${origin}/api/v2/sso/${(savedConfig.value && savedConfig.value.provider) || form.provider}/initiate?companyId=${cid.value}`);

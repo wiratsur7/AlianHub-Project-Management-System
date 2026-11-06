@@ -75,6 +75,7 @@
     import SelectComp from "@/components/molecules/Select/Select.vue"
     import { useCustomComposable } from '@/composable';
     import moment from 'moment';
+    import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
     import { useI18n } from "vue-i18n";
     const { t } = useI18n();
     // make unique id
@@ -195,7 +196,7 @@
         const differ = endDate.diff(startDate, 'days');
         for (let i = 0; i <= differ; i++) {
             const date = startDate.clone().add(i, 'days');
-            const day = date.format('ddd');
+            const day = formatDisplayDate(date.toDate(), 'ddd');
             days.value.push({ date: date.format('YYYY-MM-DD'), day });
         }
         emit('monthDate',days.value);
@@ -209,7 +210,7 @@
         const differ = endDate.diff(startDate, 'days');
         for (let i = 0; i <= differ; i++) {
             const date = startDate.clone().add(i, 'days');
-            const day = date.format('ddd');
+            const day = formatDisplayDate(date.toDate(), 'ddd');
             days.value.push({ date: date.format('YYYY-MM-DD'), day });
         }
         allMonths1.value[0].name = allMonths.value[new Date(days.value[0].date).getMonth()].name

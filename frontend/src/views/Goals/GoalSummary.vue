@@ -19,7 +19,7 @@ import { computed, ref, watch } from "vue";
 import { useStore } from "vuex";
 import { useI18n } from "vue-i18n";
 import { aiUsable } from "@/composable/aiAvailability";
-import { hourCycleOption } from "@/utils/clockText";
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 defineOptions({ name: "GoalSummary" });
 
@@ -30,7 +30,7 @@ const props = defineProps({
 });
 
 const store = useStore();
-const { t, locale } = useI18n();
+const { t } = useI18n();
 const busy = ref(false);
 const error = ref("");
 
@@ -38,7 +38,7 @@ const summary = computed(() => props.goal.summary || null);
 const canAsk = computed(() => aiUsable.value && props.goal.canEdit === true && !props.goal.archived && (!summary.value || summary.value.stale));
 const shown = computed(() => Boolean(summary.value || canAsk.value || error.value));
 const label = computed(() => t(busy.value ? "Goals.summarising" : summary.value ? "Goals.regenerate" : "Goals.summarise"));
-const madeAt = computed(() => new Date(summary.value.madeAt).toLocaleString(locale.value, { dateStyle: "medium", timeStyle: "short", ...hourCycleOption() }));
+const madeAt = computed(() => formatDisplayDate(summary.value.madeAt, 'LLL'));
 
 /* The only way a summary is made: the model is never asked on open, on a poll or on a change from elsewhere. */
 async function ask() {

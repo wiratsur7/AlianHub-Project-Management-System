@@ -137,6 +137,7 @@
 <script setup>
 import { computed, inject, nextTick, onMounted, onUnmounted, ref } from "vue";
 import moment from "moment";
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 import { useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { useToast } from "vue-toast-notification";
@@ -188,19 +189,19 @@ const top = (hour) => hour * HOUR_PX;
 const days = computed(() => {
     if (mode.value === "day") {
         const d = moment(anchor.value);
-        return [{ key: d.format("YYYY-MM-DD"), date: d, label: d.format("ddd D").toUpperCase(), isToday: d.isSame(moment(), "day") }];
+        return [{ key: d.format("YYYY-MM-DD"), date: d, label: formatDisplayDate(d.toDate(), 'ddd D').toUpperCase(), isToday: d.isSame(moment(), "day") }];
     }
     const monday = moment(anchor.value).startOf("isoWeek");
     return Array.from({ length: 5 }, (_, i) => {
         const d = monday.clone().add(i, "days");
-        return { key: d.format("YYYY-MM-DD"), date: d, label: d.format("ddd D").toUpperCase(), isToday: d.isSame(moment(), "day") };
+        return { key: d.format("YYYY-MM-DD"), date: d, label: formatDisplayDate(d.toDate(), 'ddd D').toUpperCase(), isToday: d.isSame(moment(), "day") };
     });
 });
 const rangeLabel = computed(() => {
-    if (mode.value === "day") return moment(anchor.value).format("ddd MMM D").toUpperCase();
+    if (mode.value === "day") return formatDisplayDate(moment(anchor.value).toDate(), 'ddd MMM D').toUpperCase();
     const first = days.value[0].date;
     const last = days.value[days.value.length - 1].date;
-    return `${first.format("MMM D")} – ${last.format(first.isSame(last, "month") ? "D" : "MMM D")}`.toUpperCase();
+    return `${formatDisplayDate(first.toDate(), 'MMM D')} – ${formatDisplayDate(last.toDate(), first.isSame(last, "month") ? 'D' : 'MMM D')}`.toUpperCase();
 });
 
 const unscheduled = computed(() => work.mine.value.filter((task) => !task.startDate && dueBucket(task) !== "overdue"));
@@ -217,7 +218,7 @@ const trayItems = computed(() => trayTasks.value.map((task) => ({
     title: task.TaskName,
     danger: tray.value === "overdue",
     meta: tray.value === "overdue"
-        ? t("Home.overdue_since", { date: moment(task.DueDate).format("MMM D") })
+        ? t("Home.overdue_since", { date: formatDisplayDate(task.DueDate, 'MMM D') })
         : [work.projectOf(task)?.ProjectName, task.totalEstimatedTime ? t("Home.est", { value: fmtEstimate(task.totalEstimatedTime) }) : t("Home.no_estimate")].filter(Boolean).join(" · "),
     task
 })));
@@ -226,7 +227,7 @@ const weekDays = computed(() => {
     const monday = moment(anchor.value).startOf("isoWeek");
     return Array.from({ length: 7 }, (_, i) => {
         const day = monday.clone().add(i, "days");
-        return { key: day.format("YYYY-MM-DD"), date: day, dow: day.format("dd").slice(0, 1), num: day.format("D") };
+        return { key: day.format("YYYY-MM-DD"), date: day, dow: formatDisplayDate(day.toDate(), 'dd').slice(0, 1), num: formatDisplayDate(day.toDate(), 'D') };
     });
 });
 
@@ -256,7 +257,7 @@ const ghostHeight = computed(() => (dragging.value ? (estimateMinutes(dragging.v
 const ghostRange = computed(() => {
     if (!dragging.value) return "";
     const begin = ghostStart();
-    return `${begin.format("HH:mm")}–${begin.clone().add(estimateMinutes(dragging.value), "minutes").format("HH:mm")}`;
+    return `${formatDisplayDate(begin.toDate(), 'HH:mm')}–${formatDisplayDate(begin.clone().add(estimateMinutes(dragging.value), "minutes").toDate(), 'HH:mm')}`;
 });
 function ghostStart(day = days.value.find((d) => d.key === overKey.value)) {
     const slot = Math.round((ghostTop.value / HOUR_PX) * 2) / 2;
@@ -286,7 +287,7 @@ async function place(task, begin) {
     const end = begin.clone().add(estimateMinutes(task), "minutes");
     try {
         await work.schedule(task, begin.toDate(), end.toDate());
-        $toast.success(t("Home.scheduled", { task: task.TaskName, when: begin.format("ddd HH:mm") }), { position: "top-right" });
+        $toast.success(t("Home.scheduled", { task: task.TaskName, when: formatDisplayDate(begin.toDate(), 'ddd HH:mm') }), { position: "top-right" });
     } catch (error) {
         console.error("schedule failed", error);
         $toast.error(t("Home.schedule_failed"), { position: "top-right" });

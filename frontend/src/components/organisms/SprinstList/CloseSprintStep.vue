@@ -80,6 +80,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "vue-toast-notification";
 import { apiRequest } from "@/services";
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 defineOptions({ name: "CloseSprintStep" });
 
@@ -126,7 +127,7 @@ const nextSprint = computed(() => (props.siblings || [])
 function dayLabel(value) {
     if (!value) return "";
     const d = new Date(value);
-    return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+    return Number.isNaN(d.getTime()) ? "" : formatDisplayDate(d, 'D MMM');
 }
 
 function dateRange(suggested) {

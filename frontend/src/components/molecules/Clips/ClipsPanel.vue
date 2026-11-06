@@ -141,6 +141,7 @@ import { listClips, renameClip, deleteClip } from "@/services/clips";
 import { useClipRecorder } from "@/composables/useClipRecorder";
 import { storageHelper } from "@/composable/commonFunction";
 import { useCustomComposable } from "@/composable";
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 const { t } = useI18n();
 const $toast = useToast();
@@ -227,7 +228,7 @@ function formatDate(value) {
     if (!value) return "";
     const d = new Date(value);
     if (Number.isNaN(d.getTime())) return "";
-    return d.toLocaleString([], { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+    return formatDisplayDate(d, 'D MMM h:mm A');
 }
 
 function formatDuration(sec) {

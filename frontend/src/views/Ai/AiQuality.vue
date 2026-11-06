@@ -207,18 +207,18 @@ import EmptyState from "@/components/atom/EmptyState/EmptyState.vue";
 import { apiRequest } from "@/services";
 import * as env from "@/config/env";
 import { isOwnerOrAdmin } from "@/utils/roles";
-import { hourCycleOption } from "@/utils/clockText";
 import AiSidebar from "./AiSidebar.vue";
 import { reasonOf } from "./useAgents";
 import { declineReasonText } from "./episodeText";
 import { DEFAULT_QUALITY_WINDOW, FEATURE_LABELS, KIND_LABELS, QUALITY_WINDOWS, likedPercent, trendBars } from "./qualityView";
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 defineOptions({ name: "AiQuality" });
 
 const TREND_W = 300;
 const TREND_H = 48;
 
-const { t, locale } = useI18n();
+const { t } = useI18n();
 const { getters } = useStore();
 const uid = `aiq-${Math.random().toString(36).slice(2, 9)}`;
 
@@ -251,7 +251,7 @@ const usdText = (usd) => t("AiQuality.usd", { n: Number(usd || 0).toFixed(2) });
 const listText = (list) => (list && list.length ? list.join(", ") : t("AiQuality.held_out_nothing"));
 const whenText = (at) => {
     const date = at ? new Date(at) : null;
-    return date && !Number.isNaN(date.getTime()) ? date.toLocaleString(locale?.value || undefined, { dateStyle: "medium", timeStyle: "short", ...hourCycleOption() }) : "";
+    return date && !Number.isNaN(date.getTime()) ? formatDisplayDate(date, 'LLL') : "";
 };
 
 const load = async () => {

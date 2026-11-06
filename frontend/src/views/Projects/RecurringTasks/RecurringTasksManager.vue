@@ -127,6 +127,7 @@ import ShellIcon from "@/components/organisms/Shell/ShellIcon.vue";
 import { apiRequest } from "@/services";
 import { useGetterFunctions } from "@/composable";
 import { nextOccurrences, missedPolicyOf, missedPolicyFields } from "@/views/Projects/composables/recurrence";
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 defineOptions({ name: "RecurringTasksManager" });
 
@@ -199,7 +200,7 @@ function emptyForm() {
 
 function dayLabel(date) {
     if (!date || Number.isNaN(date.getTime())) return "—";
-    return date.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+    return formatDisplayDate(date, 'ddd D MMM');
 }
 
 function scheduleText(def) {

@@ -85,6 +85,7 @@
     import UpgradePlan from '@/components/atom/UpgradYourPlanComponent/UpgradYourPlanComponent.vue';
     import HourlyMilestoneInput from '@/components/atom/HourlyMilestoneInput/HourlyMilestoneInput.vue';
     import { ref,defineProps,computed,inject,onMounted,onUnmounted, watch } from 'vue';
+    import { formatDisplayNumber } from '@/views/Settings/Language/localePrefs';
     const { t } = useI18n();
 
     const $toast = useToast();
@@ -296,8 +297,7 @@
     };
     
     const getCommaSeperatedNumber = (n)=> {
-        let numVal = Number(n)
-        return numVal.toLocaleString('en-US', {maximumFractionDigits: 2, minimumFractionDigits: 2, useGrouping: true});
+        return formatDisplayNumber(Number(n), undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     };
     // delete mielstone emit
     const deleteMilestone = (index,name) =>{

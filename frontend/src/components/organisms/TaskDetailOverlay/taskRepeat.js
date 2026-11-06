@@ -1,4 +1,5 @@
 import { nextOccurrences } from "@/views/Projects/composables/recurrence";
+import { formatDisplayDate, localePrefs } from '@/views/Settings/Language/localePrefs';
 
 export const REPEAT_FREQS = ["daily", "weekly", "monthly"];
 export const REPEAT_ENDS = ["never", "on", "after"];
@@ -60,7 +61,8 @@ export function repeatProblem(form) {
 
 export function weekdayNames(locale) {
     // 7 January 2024 was a Sunday, so index 0 lines up with Date#getDay.
-    return Array.from({ length: 7 }, (_, i) => new Date(2024, 0, 7 + i).toLocaleDateString(locale, { weekday: "short" }));
+    const prefs = { ...localePrefs, language: locale || localePrefs.language };
+    return Array.from({ length: 7 }, (_, i) => formatDisplayDate(new Date(2024, 0, 7 + i), 'ddd', prefs));
 }
 
 export function describeRepeat(rule, { t, locale } = {}) {
@@ -77,7 +79,7 @@ export function describeRepeat(rule, { t, locale } = {}) {
         text = t("TaskPanel.repeat_summary_daily", { n }, n);
     }
     if (rule.maxRuns) return t("TaskPanel.repeat_summary_times", { rule: text, n: rule.maxRuns }, rule.maxRuns);
-    if (rule.until) return t("TaskPanel.repeat_summary_until", { rule: text, date: new Date(rule.until).toLocaleDateString(locale, { day: "numeric", month: "short", year: "numeric" }) });
+    if (rule.until) return t("TaskPanel.repeat_summary_until", { rule: text, date: formatDisplayDate(rule.until, 'D MMM YYYY', { ...localePrefs, language: locale || localePrefs.language }) });
     return text;
 }
 

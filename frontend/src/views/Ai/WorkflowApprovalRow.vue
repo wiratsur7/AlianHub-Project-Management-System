@@ -14,7 +14,7 @@
 <script setup>
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
-import moment from "moment";
+import { formatRelativeTime } from '@/views/Settings/Language/localePrefs';
 import SimulatedChip from "@/components/atom/SimulatedChip/SimulatedChip.vue";
 import { deadlineOf, escalationOf, ownerOf } from "./workflowApprovals";
 
@@ -36,7 +36,7 @@ const ownerLabel = computed(() => owner.value.name
 const deadline = computed(() => deadlineOf(props.approval));
 const deadlineLabel = computed(() => (deadline.value.overdue
     ? t("Workflows.approval_overdue")
-    : t("Workflows.approval_due", { away: moment(deadline.value.at).fromNow() })));
+    : t("Workflows.approval_due", { away: formatRelativeTime(deadline.value.at) })));
 const deadlineChip = computed(() => {
     if (deadline.value.overdue) return "ah-chip--danger";
     return deadline.value.soon ? "ah-chip--warn" : "";

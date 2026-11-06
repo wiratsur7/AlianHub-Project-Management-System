@@ -138,6 +138,7 @@ import { useStore } from 'vuex';
 import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import moment from 'moment';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 import { dayClockText } from '@/utils/clockText';
 import { apiRequest } from '@/services';
 import * as env from '@/config/env';
@@ -195,7 +196,7 @@ const logPrefill = ref({});
 const today = computed(() => moment().format('YYYY-MM-DD'));
 const startIso = computed(() => weekStart.value.format('YYYY-MM-DD'));
 const endIso = computed(() => weekStart.value.clone().add(6, 'days').format('YYYY-MM-DD'));
-const rangeLabel = computed(() => `${weekStart.value.format('MMM D')} – ${weekStart.value.clone().add(6, 'days').format('MMM D')}`);
+const rangeLabel = computed(() => formatDisplayDate(weekStart.value.toDate(), 'MMM D') + ' – ' + formatDisplayDate(weekStart.value.clone().add(6, 'days').toDate(), 'MMM D'));
 const targetUser = computed(() => personId.value || uid.value);
 const isMe = computed(() => targetUser.value === uid.value);
 const canEdit = computed(() => isMe.value && !(approval.value.current && approval.value.current.status === 'approved'));
@@ -204,7 +205,7 @@ const liveSession = computed(() => (isMe.value ? timer.sessions.value.find((s) =
 const liveMinutes = computed(() => (timer.running.value ? Math.floor(timer.elapsed.value / 60) : 0));
 const liveTaskId = computed(() => (isMe.value ? (timer.active.value && timer.active.value.taskId) || (liveSession.value && liveSession.value.taskId) || '' : ''));
 
-const dayLabel = (d) => moment(d.date).format('ddd').toUpperCase();
+const dayLabel = (d) => formatDisplayDate(d.date, 'ddd').toUpperCase();
 const displayRows = computed(() => {
     const list = rows.value.map((r) => ({ ...r }));
     const live = timer.active.value || liveSession.value;
@@ -258,7 +259,7 @@ const underHint = computed(() => {
     if (!isMe.value || !underCapacity.value.length) return null;
     const list = underCapacity.value;
     const gap = list.reduce((s, d) => s + d.gapMinutes, 0);
-    const names = list.map((d) => moment(d.date).format('ddd'));
+    const names = list.map((d) => formatDisplayDate(d.date, 'ddd'));
     const text = list.length === 1
         ? t('Time.under_capacity_one', { day: names[0], h: formatHm(gap) })
         : t('Time.under_capacity_many', { days: `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`, h: formatHm(gap) });

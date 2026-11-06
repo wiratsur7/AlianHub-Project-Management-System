@@ -1,5 +1,6 @@
 // The lines of a timesheet week an agent asks to send for approval (Modules/Agents/timesheetWeek.js). The server sends
 // the week's first and last day as YYYY-MM-DD, and the note as the proposal's own text.
+import { formatDisplayDate, localePrefs } from '@/views/Settings/Language/localePrefs';
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -10,11 +11,7 @@ const dayText = (locale, value) => {
     if (!DAY.test(given)) return '';
     const date = new Date(`${given}T00:00:00`);
     if (Number.isNaN(date.getTime())) return '';
-    try {
-        return new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(date);
-    } catch (error) {
-        return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(date);
-    }
+    return formatDisplayDate(date, 'LL', { ...localePrefs, language: locale || localePrefs.language });
 };
 
 export const TIMESHEET_HEADING = Object.freeze({ kind: 'IntentPreview.new_timesheet_week', wants: 'IntentPreview.wants_timesheet_week' });

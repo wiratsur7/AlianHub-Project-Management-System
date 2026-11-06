@@ -104,6 +104,7 @@ import { openTask } from '@/components/organisms/TaskDetailOverlay/useTaskOverla
 import ReportsTabs from './ReportsTabs.vue';
 import ProvenanceRollup from '@/components/molecules/Provenance/ProvenanceRollup.vue';
 import { burndownSeries as chartSeries, burndownOptions as chartOptions, fetchBurndown, fetchSprints } from './composables/agileReports';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 defineOptions({ name: 'SprintReportPage' });
 
@@ -133,7 +134,7 @@ const sprintName = computed(() => (report.value ? report.value.sprintName : ''))
 const shortDate = (value) => {
     if (!value) return '';
     const d = new Date(value);
-    return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+    return Number.isNaN(d.getTime()) ? '' : formatDisplayDate(d, 'D MMM');
 };
 
 const projectName = computed(() => {

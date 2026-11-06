@@ -189,6 +189,7 @@
     import { useGetterFunctions } from "@/composable";
     import MilestoneDate from '@/components/molecules/FixMilestoneDate/FixMilestoneDate.vue';
     import UserProfile from '../UserProfile/UserProfile.vue';
+    import { formatDisplayNumber } from '@/views/Settings/Language/localePrefs';
     const {getUser} = useGetterFunctions();
     import { useI18n } from "vue-i18n";
     const { t } = useI18n();
@@ -222,8 +223,7 @@
     //emit
     const emit = defineEmits(['editMilestonetd','saveRefundEmit','setRefundIdTr','deleteMilestoneEmit','isVisible','valueBody']);
     const getCommaSeperatedNumber = (n)=> {
-        let numVal = Number(n)
-        return numVal.toLocaleString('en-US', {maximumFractionDigits: 2, minimumFractionDigits: 2, useGrouping: true});
+        return formatDisplayNumber(Number(n), undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     };
     // total refund amount calculation
     const refundedTotalValue = (refunded) =>{

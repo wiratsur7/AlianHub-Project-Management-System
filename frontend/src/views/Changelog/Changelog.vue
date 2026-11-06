@@ -84,6 +84,7 @@
 import { computed, onMounted, ref } from 'vue';
 import { apiRequestWithoutCompnay } from '@/services';
 import * as env from '@/config/env';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 defineOptions({ name: 'ChangelogPage' });
 
@@ -113,7 +114,7 @@ const shipped = (release) => release.sections.filter((s) => s.items.length && !/
 const shortDate = (release) => {
     const d = new Date(`${release.date}T00:00:00`);
     if (Number.isNaN(d.getTime())) return release.date;
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase();
+    return formatDisplayDate(d, 'D MMM').toUpperCase();
 };
 
 function fetchChangelog() {

@@ -361,7 +361,7 @@ import { computed, inject, nextTick, onBeforeUnmount, onMounted, provide, ref, w
 import { useStore } from "vuex";
 import { useToast } from "vue-toast-notification";
 import { useI18n } from "vue-i18n";
-import moment from "moment";
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 import ShellIcon from "@/components/organisms/Shell/ShellIcon.vue";
 import Skelaton from "@/components/atom/Skelaton/Skelaton.vue";
@@ -578,7 +578,7 @@ const commentUsers = computed(() => {
 
 function formatDay(value) {
     const date = value?.seconds ? new Date(value.seconds * 1000) : new Date(value);
-    return moment(date).format("ddd MMM D");
+    return formatDisplayDate(date, 'ddd MMM D');
 }
 
 function userData() {

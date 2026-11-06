@@ -109,6 +109,7 @@ import { computed, nextTick, reactive, ref, watch } from "vue";
 import { useStore } from "vuex";
 import { useI18n } from "vue-i18n";
 import { useToast } from "vue-toast-notification";
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 import { useFocusTrap } from "@/composable/useFocusTrap";
 import {
     INCLUDE_PARTS,
@@ -216,7 +217,7 @@ function conflictLabel(conflict) {
     const shown = (value) => {
         if (value === null || value === undefined || value === "") return t("TaskTemplates.empty");
         const date = typeof value === "string" && /^\d{4}-\d{2}-\d{2}T/.test(value) ? new Date(value) : null;
-        return date ? date.toLocaleDateString() : String(value);
+        return date ? formatDisplayDate(date) : String(value);
     };
     return t("TaskTemplates.replace_field", { field, from: shown(conflict.current), to: shown(conflict.template) });
 }

@@ -39,6 +39,7 @@ import * as env from '@/config/env';
 import { buildFilterQuery } from '@/composable/commonFunction';
 import { openTask } from '@/components/organisms/TaskDetailOverlay/useTaskOverlay';
 import { useCardMeta } from '@/components/organisms/DashboardCard/useCardMeta';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 defineOptions({ name: 'DueSoonCard' });
 
@@ -89,7 +90,7 @@ const barHeight = (n) => `${Math.max(6, Math.round((n / maxBucket.value) * 100))
 function shortDay(offset) {
     const d = new Date();
     d.setDate(d.getDate() + offset);
-    return d.toLocaleDateString(undefined, { weekday: 'short' }).slice(0, 3).toUpperCase();
+    return formatDisplayDate(d, 'ddd').slice(0, 3).toUpperCase();
 }
 
 const visibleTasks = computed(() => tasks.value.slice(0, 6));

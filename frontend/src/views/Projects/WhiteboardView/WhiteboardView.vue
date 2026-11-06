@@ -100,6 +100,7 @@ import { taskListHelper } from '@/views/Projects/helper.js';
 import { useGetterFunctions } from '@/composable';
 import { useWhiteboardBoard, newElementId, NOTE_TONES, NOTE_BOUNDS } from './useWhiteboardBoard';
 import WhiteboardNote from './WhiteboardNote.vue';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 const props = defineProps({
     projectData: { type: Object, default: () => ({}) },
@@ -304,7 +305,7 @@ async function restore(revision) {
     if (!restoreFailed.value) loadHistory();
 }
 const nameOf = (userId) => getUser(userId)?.Employee_Name || '';
-const whenOf = (savedAt) => { const date = savedAt ? new Date(savedAt) : null; return date && !Number.isNaN(date.getTime()) ? date.toLocaleString() : ''; };
+const whenOf = (savedAt) => { const date = savedAt ? new Date(savedAt) : null; return date && !Number.isNaN(date.getTime()) ? formatDisplayDate(date, 'L h:mm A') : ''; };
 
 function ensureTasksLoaded() {
     if (tasks.value.length) return;

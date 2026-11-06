@@ -191,6 +191,7 @@ import { apiRequest } from "@/services";
 import * as env from "@/config/env";
 import { memberData } from "@/views/Settings/Members/helperMember.js";
 import { ROLE_GUEST, isOwnerOrAdmin } from "@/utils/roles";
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 defineOptions({ name: "PeopleDirectory" });
 
@@ -464,7 +465,7 @@ async function loadPto() {
         rows.forEach((row) => {
             const end = new Date(row.endDate);
             if (Number.isNaN(end.getTime())) return;
-            map[String(row.userId)] = end.toLocaleDateString(undefined, { weekday: "short" });
+            map[String(row.userId)] = formatDisplayDate(end, 'ddd');
         });
         ptoByUser.value = map;
     } catch (error) {

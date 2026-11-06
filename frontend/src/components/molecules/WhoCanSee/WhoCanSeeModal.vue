@@ -73,6 +73,7 @@ import { useFocusTrap } from '@/composable/useFocusTrap';
 import { useDialogEscape } from '@/composable/useDialogEscape';
 import ShellIcon from '@/components/organisms/Shell/ShellIcon.vue';
 import UserProfile from '@/components/atom/UserProfile/UserProfile.vue';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 defineOptions({ name: 'WhoCanSeeModal' });
 
@@ -114,7 +115,7 @@ const groupKey = (group) => `${group.reason}-${group.can}`;
 const toggle = (group) => { expanded.value = { ...expanded.value, [groupKey(group)]: !expanded.value[groupKey(group)] }; };
 const shownPeople = (group) => (expanded.value[groupKey(group)] ? group.userIds : group.userIds.slice(0, PREVIEW));
 const nameOf = (userId) => getUser(userId)?.Employee_Name || t('WhoCanSee.unknown_person');
-const formatDate = (value) => new Date(value).toLocaleDateString();
+const formatDate = (value) => formatDisplayDate(value);
 
 const reasonHint = (group) => {
     if (group.reason === 'team' || group.reason === 'sprint_team') {

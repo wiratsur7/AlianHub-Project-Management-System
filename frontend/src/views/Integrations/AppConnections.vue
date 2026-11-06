@@ -136,6 +136,7 @@ import * as env from "@/config/env";
 import GithubEgressNotice from "./github/GithubEgressNotice.vue";
 import GithubRepoTable from "./github/GithubRepoTable.vue";
 import { EGRESS_BLOCKED } from "./github/githubEgress";
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 defineOptions({ name: "AppConnections" });
 
@@ -166,7 +167,7 @@ const GITHUB_REFUSALS = { 400: "github_expired", 403: "github_rights", 409: "git
 const route = useRoute();
 const router = useRouter();
 
-const when = (value) => new Date(value).toLocaleString();
+const when = (value) => formatDisplayDate(value, 'L h:mm A');
 const stateOf = (conn) => {
     if (!conn.enabled) return "paused";
     return conn.lastError ? "error" : "connected";

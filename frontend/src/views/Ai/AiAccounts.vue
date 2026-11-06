@@ -547,6 +547,7 @@ import { reasonOf } from "./useAgents";
 import { skillLabel } from "./plainLabels";
 import { mcpUrlFor } from "./mcpUrl";
 import { isOwnerOrAdmin } from "@/utils/roles";
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 // Coding-agent accounts (27a-d) and the CLI setup panel (26a). Every claim on
 // this page is one the backend actually makes: the modes and the policy come
@@ -618,7 +619,7 @@ const providerLabel = (key) => (PROVIDERS.includes(key) ? t(`Accounts.provider_$
 
 const accountMeta = computed(() => {
     const a = account.value || {};
-    const parts = [a.email || a.label, a.linkedAt ? t("Accounts.linked_on", { d: new Date(a.linkedAt).toLocaleDateString() }) : ""];
+    const parts = [a.email || a.label, a.linkedAt ? t("Accounts.linked_on", { d: formatDisplayDate(a.linkedAt) }) : ""];
     return parts.filter(Boolean).join(" · ");
 });
 
@@ -642,10 +643,10 @@ const cliLines = computed(() => {
 const expiryOf = (tk) => {
     if (!tk.expiresAt) return t("Accounts.no_expiry");
     const at = new Date(tk.expiresAt);
-    return at.getTime() < Date.now() ? t("Accounts.expired_on", { d: at.toLocaleDateString() }) : t("Accounts.expires_on", { d: at.toLocaleDateString() });
+    return at.getTime() < Date.now() ? t("Accounts.expired_on", { d: formatDisplayDate(at) }) : t("Accounts.expires_on", { d: formatDisplayDate(at) });
 };
 
-const dayOf = (value) => (value ? new Date(value).toLocaleDateString() : "");
+const dayOf = (value) => (value ? formatDisplayDate(value) : "");
 
 const expiryChoices = computed(() => expiryChoicesFor(tokenPolicy.value));
 
@@ -664,29 +665,29 @@ const scopesOf = (tk) => (tk.scopes || []).map((scope) => (TOKEN_SCOPES.includes
 
 const tokenMeta = (tk) => [
     tk.prefix ? `${tk.prefix}…` : "",
-    tk.createdAt ? t("Accounts.created_on", { d: new Date(tk.createdAt).toLocaleDateString() }) : "",
+    tk.createdAt ? t("Accounts.created_on", { d: formatDisplayDate(tk.createdAt) }) : "",
     expiryOf(tk),
     tokenPolicy.value.strict ? scopesOf(tk) : "",
     (tk.grants || []).includes(TASKS_GRANT) ? t("Accounts.token_grant_tasks_short") : "",
     (tk.grants || []).includes(DOCS_GRANT) ? t("Accounts.token_grant_docs_short") : "",
     (tk.grants || []).includes(CHAT_GRANT) ? t("Accounts.token_grant_chat_short") : "",
-    tk.lastUsedAt ? t("Accounts.used_on", { d: new Date(tk.lastUsedAt).toLocaleString() }) : t("Accounts.never_used"),
+    tk.lastUsedAt ? t("Accounts.used_on", { d: formatDisplayDate(tk.lastUsedAt, 'L h:mm A') }) : t("Accounts.never_used"),
     tk.agentAccount && tk.agentAccount.mode ? t(`Accounts.mode_${tk.agentAccount.mode}`) : "",
     tk.projectIds && tk.projectIds.length ? t("Accounts.scoped_projects", { n: tk.projectIds.length }, tk.projectIds.length) : ""
 ].filter(Boolean).join(" · ");
 
 const expiryRowMeta = (tk) => [
     tk.owner && tk.owner.name ? tk.owner.name : t("Accounts.expiry_list_owner_unknown"),
-    tk.createdAt ? t("Accounts.created_on", { d: new Date(tk.createdAt).toLocaleDateString() }) : "",
-    tk.lastUsedAt ? t("Accounts.used_on", { d: new Date(tk.lastUsedAt).toLocaleString() }) : t("Accounts.never_used")
+    tk.createdAt ? t("Accounts.created_on", { d: formatDisplayDate(tk.createdAt) }) : "",
+    tk.lastUsedAt ? t("Accounts.used_on", { d: formatDisplayDate(tk.lastUsedAt, 'L h:mm A') }) : t("Accounts.never_used")
 ].filter(Boolean).join(" · ");
 
 const stepCredentialMeta = (sc) => [
     t("Accounts.step_scoped_step", { s: sc.stepId }),
     sc.stepType || "",
     sc.startedBy && sc.startedBy.name ? t("Accounts.step_scoped_started_by", { who: sc.startedBy.name }) : "",
-    sc.issuedAt ? t("Accounts.step_scoped_first_issued", { d: new Date(sc.issuedAt).toLocaleString() }) : "",
-    sc.expiresAt ? t("Accounts.step_scoped_current_expires", { d: new Date(sc.expiresAt).toLocaleString() }) : ""
+    sc.issuedAt ? t("Accounts.step_scoped_first_issued", { d: formatDisplayDate(sc.issuedAt, 'L h:mm A') }) : "",
+    sc.expiresAt ? t("Accounts.step_scoped_current_expires", { d: formatDisplayDate(sc.expiresAt, 'L h:mm A') }) : ""
 ].filter(Boolean).join(" · ");
 
 const personNameOf = (id) => (id ? (getUser(String(id)) || {}).Employee_Name || "" : "");

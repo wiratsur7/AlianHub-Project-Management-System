@@ -8,7 +8,7 @@ vi.mock('@/locales/main', () => ({ i18n: { global: { t: (key) => key } } }));
 
 import AgentSchedules from '@/views/Ai/AgentSchedules.vue';
 import en from '@/locales/en';
-import { blankSchedule, nextRunText, scheduleError, schedulePayload, scheduleForm, describeSchedule, REPORT_KEYS } from '@/views/Ai/agentSchedule';
+import { blankSchedule, formatInZone, nextRunText, scheduleError, schedulePayload, scheduleForm, describeSchedule, REPORT_KEYS } from '@/views/Ai/agentSchedule';
 
 const t = (key, params) => (params ? `${key} ${JSON.stringify(params)}` : key);
 
@@ -50,6 +50,13 @@ describe('the schedule helpers', () => {
         const text = nextRunText(t, ROW, { locale: 'en-GB' });
         expect(text).toContain('Ai.schedule_next_run');
         expect(text).toContain('08:30');
+    });
+
+    it('uses Thai digits for a time-zone-aware date label when selected', () => {
+        const label = formatInZone('2026-09-24T18:00:00.000Z', 'Asia/Bangkok', 'th', {
+            language: 'th', calendar: 'buddhist', numerals: 'thai'
+        });
+        expect(label).toContain('๒๕');
     });
 
     it('says a paused schedule will not run', () => {

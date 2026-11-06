@@ -49,6 +49,7 @@ import { apiRequest } from '@/services';
 import * as env from '@/config/env';
 import { reasonOf } from '@/views/Ai/useAgents';
 import { isOwnerOrAdmin } from '@/utils/roles';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 const { t } = useI18n();
 const $toast = useToast();
@@ -66,7 +67,7 @@ const formError = ref('');
 
 const privileged = computed(() => isOwnerOrAdmin(Number(getters['settings/companyUserDetail']?.roleType)));
 const providerLabel = (provider) => LABELS[provider] || provider;
-const when = (d) => (d ? new Date(d).toLocaleString() : t('ProviderKeys.never'));
+const when = (d) => (d ? formatDisplayDate(d, 'L h:mm A') : t('ProviderKeys.never'));
 const problem = (res) => (res && res.data && res.data.statusText) || t('Toast.something_went_wrong');
 
 const load = async () => {

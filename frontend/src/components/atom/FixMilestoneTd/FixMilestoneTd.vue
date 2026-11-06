@@ -156,6 +156,7 @@
     import InputText from '@/components/atom/InputText/InputText.vue';
     import { ValidationFunction } from "@/composable/DefaultValidationFunction";
     import MilestoneDate from '@/components/molecules/FixMilestoneDate/FixMilestoneDate.vue';
+    import { formatDisplayNumber } from '@/views/Settings/Language/localePrefs';
     const props = defineProps({
         editfixMilestone : {type:Number,required:true},
         fixMilestoneProps : {type:Object,required:true},
@@ -184,8 +185,7 @@
     import { useI18n } from "vue-i18n";
     const { t } = useI18n();
     const getCommaSeperatedNumber = (n)=> {
-        let numVal = Number(n)
-        return numVal.toLocaleString('en-US', {maximumFractionDigits: 2, minimumFractionDigits: 2, useGrouping: true});
+        return formatDisplayNumber(Number(n), undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     };
     const refundedTotalValue = (refunded) =>{
         var refundedValue = 0;

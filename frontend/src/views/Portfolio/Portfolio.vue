@@ -125,6 +125,7 @@
 import { ref, reactive, computed, watch, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import moment from 'moment';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 import { apiRequest } from '@/services';
 import * as env from '@/config/env';
 import ShellIcon from '@/components/organisms/Shell/ShellIcon.vue';
@@ -154,7 +155,7 @@ const selected = computed(() => portfolios.value.find((p) => String(p._id) === s
 
 const headline = computed(() => {
     const count = rollup.value ? rollup.value.totals.projects : 0;
-    return t('Reports.portfolio_head', { n: count, week: moment().startOf('week').format('MMM D') }).toUpperCase();
+    return t('Reports.portfolio_head', { n: count, week: formatDisplayDate(moment().startOf('week').toDate(), 'MMM D') }).toUpperCase();
 });
 
 const atRisk = computed(() => (rollup.value ? rollup.value.projects : [])

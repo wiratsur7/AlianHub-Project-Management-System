@@ -25,6 +25,7 @@ import { REPORT_TIMEOUT_MS, useCardMeta } from '@/components/organisms/Dashboard
 import { AI_ACCESS, AI_STATE, aiAccessFor, aiAvailability, loadAiAvailability, messageKeysFor } from '@/composable/aiAvailability';
 import { answerHtml } from '@/views/Ai/askMarkdown';
 import { messageKey, sourceLink } from '@/views/Ai/askWhy';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 defineOptions({ name: 'AskAQuestionCard' });
 
@@ -39,7 +40,7 @@ const props = defineProps({
     taskStatusArray: { type: [Array, Object], default: () => ({}) },
 });
 
-const { t, locale } = useI18n();
+const { t } = useI18n();
 const meta = useCardMeta();
 const dashboardId = inject('dashboardId', ref(''));
 const companyId = inject('$companyId', ref(''));
@@ -101,12 +102,7 @@ const showError = (text = '') => {
 
 const whenOf = (askedAt) => {
     const date = new Date(askedAt);
-    const style = { dateStyle: 'medium', timeStyle: 'short' };
-    try {
-        return date.toLocaleString(locale?.value || undefined, style);
-    } catch {
-        return date.toLocaleString(undefined, style);
-    }
+    return Number.isNaN(date.getTime()) ? '' : formatDisplayDate(date, 'LLL');
 };
 
 const showAnswer = (answer, { stale = false } = {}) => {

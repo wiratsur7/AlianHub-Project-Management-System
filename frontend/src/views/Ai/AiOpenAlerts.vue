@@ -27,6 +27,7 @@ import { apiRequest } from "@/services";
 import * as env from "@/config/env";
 import { reasonOf } from "./useAgents";
 import { ALERT_FORMS, ALERT_TYPES, incidentTextOf } from "./rateAlerts";
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 defineOptions({ name: "AiOpenAlerts" });
 
@@ -38,7 +39,7 @@ const error = ref("");
 
 const open = computed(() => incidents.value.filter((incident) => ALERT_TYPES.includes(incident?.type)));
 const formOf = (type) => ALERT_FORMS[type];
-const when = (iso) => (iso ? new Date(iso).toLocaleString() : "");
+const when = (iso) => (iso ? formatDisplayDate(iso, 'L h:mm A') : "");
 const textOf = (incident) => {
     const { key, params } = incidentTextOf(incident);
     return t(key, { ...params, agent: params.agent || t("AiAlerts.unnamed_agent") });

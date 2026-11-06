@@ -33,7 +33,7 @@
 
 <script setup>
 import { computed } from "vue";
-import moment from "moment";
+import { formatDisplayDate, formatRelativeTime } from '@/views/Settings/Language/localePrefs';
 import TaskTypeIcon from "@/components/atom/TaskTypeIcon/TaskTypeIcon.vue";
 import ListStatusCircle from "@/views/Projects/ListView/ListStatusCircle.vue";
 import ListAssigneeCell from "@/views/Projects/ListView/ListAssigneeCell.vue";
@@ -53,6 +53,6 @@ defineEmits(["open", "status", "priority"]);
 
 const { statuses, done, canStatus, canPriority, showPriority, taskType, hasTypeIcon, color, depth } = useRowState(() => props.task, () => props.project);
 const indent = computed(() => (depth.value ? { paddingInlineStart: `${12 + depth.value * 18}px` } : null));
-const updatedAgo = computed(() => (props.task.updatedAt ? moment(props.task.updatedAt).fromNow() : ""));
-const updatedFull = computed(() => (props.task.updatedAt ? moment(props.task.updatedAt).format("LLL") : null));
+const updatedAgo = computed(() => (props.task.updatedAt ? formatRelativeTime(props.task.updatedAt) : ""));
+const updatedFull = computed(() => (props.task.updatedAt ? formatDisplayDate(props.task.updatedAt, 'LLL') : null));
 </script>

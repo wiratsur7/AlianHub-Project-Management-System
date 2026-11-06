@@ -117,6 +117,7 @@
 <script setup>
 import { computed, inject, onMounted, onUnmounted, ref, watch } from "vue";
 import moment from "moment";
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 import { useRoute, useRouter } from "vue-router";
 import { useStore } from "vuex";
 import { useI18n } from "vue-i18n";
@@ -183,7 +184,7 @@ const adding = ref(false);
 const agendaDay = ref(moment());
 const pendingDateTask = ref(null);
 
-const todayLabel = computed(() => moment().format("ddd MMM D"));
+const todayLabel = computed(() => formatDisplayDate(new Date(), 'ddd MMM D'));
 const projects = computed(() => getters["projectData/projects"]?.data || []);
 const companyName = computed(() => getters["settings/selectedCompany"]?.Cst_CompanyName || "");
 
@@ -374,7 +375,7 @@ async function onSchedule({ taskId, start: begin, end }) {
     if (!task) return;
     try {
         await work.schedule(task, begin.toDate(), end.toDate());
-        $toast.success(t("Home.scheduled", { task: task.TaskName, when: begin.format("ddd HH:mm") }), { position: "top-right" });
+        $toast.success(t("Home.scheduled", { task: task.TaskName, when: formatDisplayDate(begin.toDate(), 'ddd HH:mm') }), { position: "top-right" });
     } catch (error) {
         console.error("schedule failed", error);
         $toast.error(t("Home.schedule_failed"), { position: "top-right" });

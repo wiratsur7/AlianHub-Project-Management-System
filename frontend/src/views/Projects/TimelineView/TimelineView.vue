@@ -62,6 +62,7 @@ export default { name: 'TimelineView' };
 import { ref, computed, onMounted, inject, watch } from 'vue';
 import { useStore } from 'vuex';
 import { taskListHelper } from '@/views/Projects/helper.js';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 const props = defineProps({
     projectData: { type: Object, default: () => ({}) },
@@ -115,7 +116,7 @@ const monthTicks = computed(() => {
     let guard = 0;
     while (d.getTime() <= max && guard++ < 60) {
         const ms = d.getTime();
-        if (ms >= min) ticks.push({ left: pct(ms), label: d.toLocaleString('default', { month: 'short', year: '2-digit' }) });
+        if (ms >= min) ticks.push({ left: pct(ms), label: formatDisplayDate(d, 'MMM YY') });
         d.setUTCMonth(d.getUTCMonth() + 1);
     }
     return ticks;
@@ -127,7 +128,7 @@ const statusClass = (t) => {
     if (type === 'inprogress') return 'is-progress';
     return 'is-todo';
 };
-const fmt = (d) => (d ? new Date(d).toLocaleDateString() : '');
+const fmt = (d) => (d ? formatDisplayDate(d) : '');
 
 function ensureTasksLoaded() {
     if (tasks.value.length) return;

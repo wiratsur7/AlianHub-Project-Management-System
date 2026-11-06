@@ -177,6 +177,7 @@
     import { useStore } from "vuex";
     import { ref, inject, watch, computed, defineComponent, onMounted } from "vue";
     import moment from 'moment';
+    import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
     import SpinnerComp from '@/components/atom/SpinnerComp/SpinnerComp.vue';
     import ProjectTimesheetView from '@/components/atom/TimesheetView/ProjectTimeSheetView/ProjectTimesheetView.vue'
     import RangePickerComp from '@/components/molecules/RangePickerComp/RangePickerComp.vue';
@@ -333,17 +334,19 @@
             let manageProjectData = JSON.parse(JSON.stringify(projectList.value));
             let projectIds = manageProjectData.map(a => a._id);
             for (let i = sDate; i < eDate; i += 86400000) {
+                const columnDate = new Date(i);
                 const DateColumn = {
-                    date: moment(new Date(i)).format('DD'),
-                    day: moment(new Date(i)).format('ddd'),
+                    date: formatDisplayDate(columnDate, 'DD'),
+                    day: moment(columnDate).format('ddd'),
+                    dayLabel: formatDisplayDate(columnDate, 'ddd'),
                     fullDate: moment(new Date(i)).format('YYYY-MM-DD'),
                     currentDate: moment(new Date()).format('YYYY-MM-DD'),
-                    arabiDay: moment(new Date(i)).format('Do').replace(/[0-9]/g, ''),
-                    arabiMonth: moment(new Date(i)).format('MMM'),
-                    mainDate: new Date(i),
+                    arabiDay: '',
+                    arabiMonth: formatDisplayDate(columnDate, 'MMM'),
+                    mainDate: columnDate,
                     weekNumber: "",
                     weekName: "",
-                    dateMonth: moment(new Date(i)).format('MM'),
+                    dateMonth: formatDisplayDate(columnDate, 'MM'),
                     totalProjectLogs: {},
                     totalProjectETALogs: {},
                     totalDayEst: 0,

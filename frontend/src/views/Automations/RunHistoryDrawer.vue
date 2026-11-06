@@ -60,6 +60,7 @@ import ShellIcon from '@/components/organisms/Shell/ShellIcon.vue';
 import { openTask } from '@/components/organisms/TaskDetailOverlay/useTaskOverlay';
 import { assignPeopleText, assignSkippedText } from './assignText';
 import { triggerLabel, actionLabel } from './registryText';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 defineOptions({ name: 'RunHistoryDrawer' });
 
@@ -89,7 +90,7 @@ const OUTCOMES = {
 };
 const outcomeOf = (run) => OUTCOMES[run.status] || OUTCOMES.queued;
 
-const when = (run) => (run.startedAt ? new Date(run.startedAt).toLocaleString() : '—');
+const when = (run) => (run.startedAt ? formatDisplayDate(run.startedAt, 'L h:mm A') : '—');
 
 const duration = (run) => {
     if (!run.startedAt || !run.finishedAt) return null;

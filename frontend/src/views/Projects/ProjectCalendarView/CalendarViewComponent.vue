@@ -115,6 +115,8 @@
     import { assignLanes } from "@/views/Projects/composables/sprintLanes";
     import EmptyState from "@/components/atom/EmptyState/EmptyState.vue";
     import { useAddFirstTask } from "@/views/Projects/composables/useAddFirstTask";
+    import { localePrefs, formatDisplayDate } from "@/views/Settings/Language/localePrefs";
+    import { loadCalendarLocale } from "@/utils/localeLoader";
 
     defineOptions({ name: "CalendarViewComponent" });
 
@@ -177,7 +179,7 @@
         const anchor = visibleRange.value.start
             ? new Date(visibleRange.value.start.getTime() + 14 * 86400000)
             : new Date(props.calendarDate || Date.now());
-        return anchor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }).toUpperCase();
+        return formatDisplayDate(anchor, 'MMMM YYYY').toUpperCase();
     });
 
     const formatDate = (date) =>  {
@@ -194,7 +196,7 @@
         return [year, month, day].join('-');
     }
 
-    const dayLabel = (iso) => new Date(`${iso}T00:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    const dayLabel = (iso) => formatDisplayDate(new Date(iso + 'T00:00:00'), 'MMM D');
 
     const chipStyle = (event) => {
         if (event.extendedProps.kind === 'pto') return {};
@@ -375,7 +377,8 @@
         ],
         headerToolbar: false,
         initialView: 'dayGridMonth',
-        firstDay: 1,
+        firstDay: ({ monday: 1, sunday: 0, saturday: 6 })[localePrefs.weekStart] ?? 1,
+        locale: 'en',
         height: '100%',
         fixedWeekCount: false,
         initialDate: formatDate(new Date().getTime()),
@@ -397,6 +400,19 @@
         eventChange: handleEventsChange,
         select: handleEventsSelect
     });
+
+    let calendarLocaleRequest = 0;
+    watch(() => [localePrefs.language, localePrefs.weekStart], async () => {
+        const request = ++calendarLocaleRequest;
+        const language = localePrefs.language;
+        try {
+            const calendarLocale = await loadCalendarLocale(language);
+            if (request === calendarLocaleRequest && language === localePrefs.language) calendarOptions.value.locale = calendarLocale;
+        } catch {
+            if (request === calendarLocaleRequest) calendarOptions.value.locale = 'en';
+        }
+        calendarOptions.value.firstDay = ({ monday: 1, sunday: 0, saturday: 6 })[localePrefs.weekStart] ?? 1;
+    }, { immediate: true });
 
     // FullCalendar reads these callbacks once per render, so a new closure is what
     // makes freshly loaded PTO or a filter change reach the cells.

@@ -1,5 +1,6 @@
 import { ref, onMounted, onUnmounted } from 'vue';
 import { calendar } from '@/components/organisms/HourlyMilestone/helper.js';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 export function useProjectCalendar() {
     const { calendarRange } = calendar();
@@ -13,14 +14,14 @@ export function useProjectCalendar() {
         const base = calendarDate.value ? new Date(calenderSelectDate.value) : new Date();
         const nextDate = base.setMonth(base.getMonth() - 1, 1);
         calenderSelectDate.value = nextDate;
-        calendarDate.value = new Date(nextDate).toLocaleString('default', { month: 'long', year: 'numeric' });
+        calendarDate.value = formatDisplayDate(nextDate, 'MMMM YYYY');
     };
 
     const nextMonth = () => {
         const base = calendarDate.value ? new Date(calenderSelectDate.value) : new Date();
         const nextDate = base.setMonth(base.getMonth() + 1, 1);
         calenderSelectDate.value = nextDate;
-        calendarDate.value = new Date(nextDate).toLocaleString('default', { month: 'long', year: 'numeric' });
+        calendarDate.value = formatDisplayDate(nextDate, 'MMMM YYYY');
     };
 
     const defaultMonth = () => {
@@ -41,7 +42,7 @@ export function useProjectCalendar() {
         rangeObject.value.selectedmonth = `${month}`;
         rangeObject.value.rangeValueMonthly = rangeObject.value.monthlyOrweeklyRangesValue[`${getYear}`];
         calenderSelectDate.value = new Date(tmpValue.start).getTime();
-        calendarDate.value = new Date(tmpValue.start).toLocaleString('default', { month: 'long', year: 'numeric' });
+        calendarDate.value = formatDisplayDate(tmpValue.start, 'MMMM YYYY');
     };
 
     const rangeObjectFRun = (value) => {

@@ -1,4 +1,5 @@
 import moment from "moment";
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 export const PRIORITY_RANK = { URGENT: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
 
@@ -33,8 +34,8 @@ export function dueLabel(date, t) {
     if (d.isSame(today, "day")) return t("Home.today");
     if (d.isSame(today.clone().add(1, "day"), "day")) return t("Home.tomorrow");
     const diff = d.startOf("day").diff(today, "days");
-    if (diff > 1 && diff < 7) return d.format("ddd");
-    return d.format("MMM D");
+    if (diff > 1 && diff < 7) return formatDisplayDate(d.toDate(), 'ddd');
+    return formatDisplayDate(d.toDate(), 'MMM D');
 }
 
 export function compareTasks(a, b, sortBy) {

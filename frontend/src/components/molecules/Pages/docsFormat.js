@@ -1,3 +1,5 @@
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
+
 const MINUTE = 60 * 1000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
@@ -18,7 +20,7 @@ export function shortDate(value) {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return '—';
     const sameYear = date.getFullYear() === new Date().getFullYear();
-    return date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', ...(sameYear ? {} : { year: 'numeric' }) });
+    return formatDisplayDate(date, sameYear ? 'D MMM' : 'D MMM YYYY');
 }
 
 export function toDateInput(value) {

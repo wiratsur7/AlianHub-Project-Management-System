@@ -176,6 +176,7 @@ import { useToast } from 'vue-toast-notification';
 import { apiRequest, apiRequestWithoutCompnay } from '@/services';
 import { storageQueryBuilder, generateFileName } from '@/utils/storageQueryBuild.js';
 import * as env from '@/config/env';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 const props = defineProps({
     modelValue: { type: Boolean, default: false },
@@ -231,10 +232,10 @@ const dateLabel = computed(() => {
     const tomorrow = new Date();
     tomorrow.setDate(today.getDate() + 1);
     const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-    const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).toLowerCase().replace(' ', '');
+    const time = formatDisplayDate(d, 'h:mm A');
     if (sameDay(d, today)) return `${t('Reminders.today')}, ${time}`;
     if (sameDay(d, tomorrow)) return `${t('Reminders.tomorrow')}, ${time}`;
-    return `${d.toLocaleDateString([], { day: 'numeric', month: 'short' })}, ${time}`;
+    return formatDisplayDate(d, 'D MMM h:mm A');
 });
 
 function setPreset(daysFromToday) {

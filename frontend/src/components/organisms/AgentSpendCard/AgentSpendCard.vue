@@ -30,6 +30,7 @@ import { apiRequest } from '@/services';
 import * as env from '@/config/env';
 import { aiOff } from '@/composable/aiAvailability';
 import { useCardMeta } from '@/components/organisms/DashboardCard/useCardMeta';
+import { formatDisplayNumber } from '@/views/Settings/Language/localePrefs';
 
 defineOptions({ name: 'AgentSpendCard' });
 
@@ -49,10 +50,19 @@ const meta = useCardMeta();
 const spend = ref({ agents: [], totalUsd: 0 });
 
 const money = (usd) => {
+    const value = Number(usd) || 0;
+    const numberOptions = { minimumFractionDigits: 2, maximumFractionDigits: 2 };
     try {
-        return new Intl.NumberFormat(locale.value || 'en', { style: 'currency', currency: 'USD' }).format(Number(usd) || 0);
+        const parts = new Intl.NumberFormat(locale.value || 'en', { style: 'currency', currency: 'USD' }).formatToParts(value);
+        const numericPart = (part) => ['integer', 'group', 'decimal', 'fraction'].includes(part.type);
+        const first = parts.findIndex(numericPart);
+        if (first < 0) return parts.map((part) => part.value).join('');
+        let last = first;
+        for (let index = first + 1; index < parts.length && numericPart(parts[index]); index += 1) last = index;
+        const amount = formatDisplayNumber(Math.abs(value), undefined, numberOptions);
+        return parts.slice(0, first).map((part) => part.value).join('') + amount + parts.slice(last + 1).map((part) => part.value).join('');
     } catch (e) {
-        return `$${(Number(usd) || 0).toFixed(2)}`;
+        return `$${formatDisplayNumber(value, undefined, numberOptions)}`;
     }
 };
 

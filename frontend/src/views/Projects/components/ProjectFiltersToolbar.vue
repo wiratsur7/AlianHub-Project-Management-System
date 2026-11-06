@@ -197,7 +197,7 @@
                 </div>
                 <div class="d-flex align-items-center assignee-filter">
                     <div class="group_by monthly-calendar monthly-calendar-view" @click="$emit('openCalendar')">
-                        {{ calendarDate ? calendarDate : new Date().toLocaleString('default', { month: 'long', year: 'numeric' }) }}
+                        {{ calendarDate ? calendarDate : formatDisplayDate(new Date(), 'MMMM YYYY') }}
                         <MonthlyCalendarMilestone
                             v-if="calendartoggle"
                             :rangeObject="rangeObject"
@@ -263,6 +263,7 @@ import { ALL as DONE_BY_ALL } from '@/components/molecules/Provenance/doneByQuer
 import { clearFilterSignal } from '@/views/Projects/composables/taskFilterSignal';
 import { maskOf } from '@/utils/iconMask';
 import ProjectFiltersSheet from './ProjectFiltersSheet.vue';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 const PHONE_MAX = 767;
 const { t } = useI18n();

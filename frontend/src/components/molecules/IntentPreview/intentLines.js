@@ -8,6 +8,7 @@ import { PROJECT_COPY_HEADING, PROJECT_COPY_LINE_KINDS } from './projectCopyLine
 import { COMPUTED_LINE_KINDS } from './computedLines';
 import { DASHBOARD_HEADING, DASHBOARD_LINE_KINDS } from './dashboardLines';
 import { TIMESHEET_HEADING, TIMESHEET_LINE_KINDS } from './timesheetLines';
+import { formatDisplayDate, localePrefs } from '@/views/Settings/Language/localePrefs';
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const DATE_TIME = /^\d{4}-\d{2}-\d{2}T/;
@@ -16,21 +17,13 @@ const PRIORITIES = Object.freeze(['urgent', 'high', 'medium', 'low']);
 const textOf = (value) => (typeof value === 'string' ? value.trim() : '');
 const countOf = (value) => (Number.isFinite(value) && value > 0 ? Math.floor(value) : 0);
 
-const formatted = (locale, options, date) => {
-    try {
-        return new Intl.DateTimeFormat(locale, options).format(date);
-    } catch (error) {
-        return new Intl.DateTimeFormat(undefined, options).format(date);
-    }
-};
-
 const dateText = (locale, value) => {
     const given = textOf(value);
     const isDay = DAY.test(given);
     if (!isDay && !DATE_TIME.test(given)) return given;
     const date = new Date(isDay ? `${given}T00:00:00` : given);
     if (Number.isNaN(date.getTime())) return given;
-    return formatted(locale, isDay ? { dateStyle: 'medium' } : { dateStyle: 'medium', timeStyle: 'short' }, date);
+    return formatDisplayDate(date, isDay ? 'LL' : 'LLL', { ...localePrefs, language: locale || localePrefs.language });
 };
 
 const dated = (labelKey) => (t, line, locale) => (textOf(line.date) ? { label: t(labelKey), text: dateText(locale, line.date) } : null);

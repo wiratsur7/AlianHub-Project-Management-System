@@ -75,6 +75,7 @@ import { useI18n } from "vue-i18n";
 // UTILS
 import { apiRequest } from '@/services';
 import { useGetterFunctions } from "@/composable";
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 const $toast = useToast();
 const { t } = useI18n();
@@ -136,7 +137,7 @@ function ownerName(epic) {
 function formatDate(value) {
     if (!value) return '';
     const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString();
+    return Number.isNaN(date.getTime()) ? '' : formatDisplayDate(date);
 }
 
 function createEpic() {

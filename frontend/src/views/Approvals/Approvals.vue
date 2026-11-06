@@ -164,6 +164,7 @@ import { useStore } from 'vuex';
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import moment from 'moment';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 import { apiRequest } from '@/services';
 import * as env from '@/config/env';
 import { useGetterFunctions } from '@/composable';
@@ -234,8 +235,8 @@ const nameOf = (id) => { const u = getUser(id) || {}; return u.Employee_Name || 
 const rangeLabel = (s, e) => {
     const a = moment(s);
     const b = moment(e);
-    if (a.isSame(b, 'day')) return a.format('MMM D');
-    return a.isSame(b, 'month') ? `${a.format('MMM D')}–${b.format('D')}` : `${a.format('MMM D')} – ${b.format('MMM D')}`;
+    if (a.isSame(b, 'day')) return formatDisplayDate(a.toDate(), 'MMM D');
+    return a.isSame(b, 'month') ? `${formatDisplayDate(a.toDate(), 'MMM D')}–${formatDisplayDate(b.toDate(), 'D')}` : `${formatDisplayDate(a.toDate(), 'MMM D')} – ${formatDisplayDate(b.toDate(), 'MMM D')}`;
 };
 const overlapText = (row) => {
     const names = approvedLeave.value
@@ -256,7 +257,7 @@ const cards = computed(() => {
         kind: 'timesheet', key: `ts-${row._id}`, row, at: row.submittedAt, own: String(row.userId) === String(uid.value),
         name: row.userName || nameOf(row.userId), avatar: row.userAvatar, color: colorFor(row.userId),
         title: t('Time.ts_card_title', { name: row.userName || nameOf(row.userId) }),
-        sub: t('Time.week_of', { date: moment(row.periodStart).format('MMM D'), h: formatHm(weekMinutes(row)) }),
+        sub: t('Time.week_of', { date: formatDisplayDate(row.periodStart, 'MMM D'), h: formatHm(weekMinutes(row)) }),
     }));
     const lv = leave.value.map((row) => {
         const days = Number(row.totalDays) || 0;

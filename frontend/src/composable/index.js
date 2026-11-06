@@ -1,6 +1,7 @@
 import { computed, inject, ref } from "vue";
 import { useStore } from "vuex";
 import moment from "moment";
+import { effectiveDateFormat, formatDisplayDate } from "@/views/Settings/Language/localePrefs";
 import * as env from '@/config/env';
 import { apiRequest } from '../services';
 import { useToast } from "vue-toast-notification";
@@ -518,11 +519,10 @@ export function useMoment() {
     }
     function changeDateFormate(date, formate) {
         if(!date) return null;
-        if(formate) {
-            return moment(date).format(formate);
-        } else {
-            return moment(date).format(dateFormat.value);
-        }
+        // This helper also builds text fields sent in activity/API payloads.
+        // Keep its output Gregorian and ASCII; UI-only labels use formatDisplayDate.
+        if(formate) return moment(date).format(formate);
+        return moment(date).format(dateFormat.value);
     }
 
     function getMonthDateRange(year, month) {
@@ -751,30 +751,39 @@ export function useConvertDate() {
         if (!dueDate) return '';
 
         try {
-            if (format === '') {
-                format = getters['settings/companyDateFormat'].dateFormat;
-            }
-            let date = dueDate && dueDate?.seconds ? moment(dueDate.seconds * 1000) : moment(dueDate);
+            const displayFormat = format || getters['settings/companyDateFormat']?.dateFormat || effectiveDateFormat();
+            const date = dueDate && dueDate?.seconds ? moment(dueDate.seconds * 1000) : moment(dueDate);
+            const render = (pattern) => formatDisplayDate(date.toDate(), pattern);
             if(options.showDayName) {
-                return date.calendar(null, {
-                    sameDay: `[${t('Home.Today')}]`,
-                    nextDay: `[${t('general.Tomorrow')}]`,
-                    nextWeek: 'dddd',
-                    lastDay: `[${t('general.Yesterday')}]`,
-                    lastWeek: format,
-                    sameElse: format,
+                const relative = date.calendar(null, {
+                    sameDay: '[sameDay]',
+                    nextDay: '[nextDay]',
+                    nextWeek: '[nextWeek]',
+                    lastDay: '[lastDay]',
+                    lastWeek: '[lastWeek]',
+                    sameElse: '[sameElse]',
                 });
+                if (relative === 'sameDay') return t('Home.Today');
+                if (relative === 'nextDay') return t('general.Tomorrow');
+                if (relative === 'lastDay') return t('general.Yesterday');
+                if (relative === 'nextWeek') return render('dddd');
+                return render(displayFormat);
             } else if(options.minuteDifference) {
-                return date.calendar(null, {
-                    sameDay: 'HH:mm:A',
-                    nextDay: `[${t('general.Tomorrow')}]`,
-                    nextWeek: 'dddd',
-                    lastDay: `[${t('general.Yesterday')}]`,
-                    lastWeek: "DD/MM/YYYY",
-                    sameElse: "DD/MM/YYYY",
+                const relative = date.calendar(null, {
+                    sameDay: '[sameDay]',
+                    nextDay: '[nextDay]',
+                    nextWeek: '[nextWeek]',
+                    lastDay: '[lastDay]',
+                    lastWeek: '[lastWeek]',
+                    sameElse: '[sameElse]',
                 });
+                if (relative === 'sameDay') return render('HH:mm');
+                if (relative === 'nextDay') return t('general.Tomorrow');
+                if (relative === 'lastDay') return t('general.Yesterday');
+                if (relative === 'nextWeek') return render('dddd');
+                return render(effectiveDateFormat());
             } else {
-                return date.format(format);
+                return render(displayFormat);
             }
         } catch (error) {
             console.error('ERROR in due date convert function', error);

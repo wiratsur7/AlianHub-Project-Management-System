@@ -113,6 +113,7 @@ import { useStore } from 'vuex';
 import { useRoute } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import moment from 'moment';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 import { clockText } from '@/utils/clockText';
 import { apiRequest } from '@/services';
 import * as env from '@/config/env';
@@ -157,7 +158,7 @@ const sessionErrors = ref({});
 let projectNames = null;
 
 const todayIso = computed(() => moment().format('YYYY-MM-DD'));
-const todayLabel = computed(() => moment().format('ddd MMM D').toUpperCase());
+const todayLabel = computed(() => formatDisplayDate(new Date(), 'ddd MMM D').toUpperCase());
 const selectedDate = computed(() => {
     if (whenChoice.value === 'yesterday') return moment().subtract(1, 'day').format('YYYY-MM-DD');
     if (whenChoice.value === 'custom' && customDate.value) return customDate.value;
@@ -190,7 +191,7 @@ const overnightSessions = computed(() => {
     }
     return list.map((s) => {
         const started = moment(s.startedAt);
-        const when = started.isSame(moment(), 'day') ? t('Time.today') : (started.isSame(moment().subtract(1, 'day'), 'day') ? t('Time.yesterday') : started.format('MMM D'));
+        const when = started.isSame(moment(), 'day') ? t('Time.today') : (started.isSame(moment().subtract(1, 'day'), 'day') ? t('Time.yesterday') : formatDisplayDate(started.toDate(), 'MMM D'));
         return { ...s, startClock: clockText(started), whenLabel: when, error: sessionErrors.value[s.key] || '' };
     });
 });

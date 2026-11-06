@@ -73,6 +73,7 @@ import { AI_MENTION_NAME, AI_MENTION_NOTICES, aiAnswerHtml, aiAskStateOf, aiAuth
 import { loadReplies, repliesOf, replyCountOf, sendReply, threadStore } from "@/composable/commentThreads";
 import UserProfile from "@/components/atom/UserProfile/UserProfile.vue";
 import CommentAssignment from "./CommentAssignment.vue";
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 defineOptions({ name: "CommentThread" });
 
@@ -122,7 +123,7 @@ function followCitation(event, row) {
 }
 const stamp = (iso) => {
     const d = new Date(iso);
-    return Number.isNaN(d.getTime()) ? "" : d.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+    return Number.isNaN(d.getTime()) ? "" : formatDisplayDate(d, 'D MMM h:mm A');
 };
 
 async function ensureLoaded() {

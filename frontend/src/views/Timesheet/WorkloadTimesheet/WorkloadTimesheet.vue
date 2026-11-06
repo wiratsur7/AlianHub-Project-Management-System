@@ -109,6 +109,7 @@ import ShellIcon from '@/components/organisms/Shell/ShellIcon.vue';
 import { useStore } from 'vuex';
 import { useI18n } from 'vue-i18n';
 import moment from 'moment';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 import { apiRequest } from '@/services';
 import * as env from '@/config/env';
 import { useCustomComposable, useGetterFunctions } from '@/composable';
@@ -151,7 +152,7 @@ const today = computed(() => moment().format('YYYY-MM-DD'));
 const endDate = computed(() => start.value.clone().add(11, 'days'));
 const startIso = computed(() => start.value.format('YYYY-MM-DD'));
 const endIso = computed(() => endDate.value.format('YYYY-MM-DD'));
-const rangeLabel = computed(() => `${start.value.format('MMM D')} – ${endDate.value.format(start.value.isSame(endDate.value, 'month') ? 'D' : 'MMM D')}`);
+const rangeLabel = computed(() => formatDisplayDate(start.value.toDate(), 'MMM D') + ' – ' + formatDisplayDate(endDate.value.toDate(), start.value.isSame(endDate.value, 'month') ? 'D' : 'MMM D'));
 const selectedProject = computed(() => projectList.value.find((x) => String(x._id) === projectId.value) || null);
 const visibleDays = computed(() => workingDaysOnly(days.value, gridWeek(answeredWeek.value, currentCompany.value, selectedProject.value)));
 const activeProject = computed(() => {
@@ -163,7 +164,7 @@ const timeZone = computed(() => (getUser(uid.value) || {}).timeZone || Intl.Date
 const PALETTE = ['var(--brand)', 'var(--ok)', 'var(--warn)', 'var(--agent)'];
 const colorFor = (id) => PALETTE[String(id || '').split('').reduce((s, c) => s + c.charCodeAt(0), 0) % PALETTE.length];
 const initial = (name) => (name || '?').trim().charAt(0).toUpperCase();
-const dayHead = (d) => `${moment(d).format('dd').charAt(0)}${moment(d).format('D')}`;
+const dayHead = (d) => formatDisplayDate(d, 'dd').charAt(0) + formatDisplayDate(d, 'D');
 const hLabel = (m) => {
     const h = (Number(m) || 0) / 60;
     return `${h >= 10 || Number.isInteger(h) ? Math.round(h) : Math.round(h * 10) / 10}h`;
@@ -178,7 +179,7 @@ const subLabel = (u) => {
     if (u.utilizationPct > 100) return t('Time.pct_period', { pct: u.utilizationPct });
     const off = u.days.filter((d) => isOff(d) && visibleDays.value.includes(d.date));
     if (off.length) {
-        const range = off.length === 1 ? moment(off[0].date).format('ddd') : `${moment(off[0].date).format('ddd')}–${moment(off[off.length - 1].date).format('ddd')}`;
+        const range = off.length === 1 ? formatDisplayDate(off[0].date, 'ddd') : formatDisplayDate(off[0].date, 'ddd') + '–' + formatDisplayDate(off[off.length - 1].date, 'ddd');
         return t(off.every((d) => d.pto) ? 'Time.pto_range' : 'Time.unavailable_range', { range });
     }
     return t('Time.per_day', { h: u.hoursPerDay });
@@ -222,7 +223,7 @@ const move = async ({ chip, fromUser, fromDay, toUser, toDay }) => {
             taskId: chip.taskId, estimateId: chip.estimateId, fromUserId: fromUser.userId, toUserId: toUser.userId, fromDate: fromDay.date, toDate: toDay.date,
         })) || {}).data || {};
         if (!body.status) throw new Error(body.statusText || 'move_failed');
-        flash(t('Time.moved', { task: chip.name, name: toUser.name, day: moment(toDay.date).format('ddd D') }));
+        flash(t('Time.moved', { task: chip.name, name: toUser.name, day: formatDisplayDate(toDay.date, 'ddd D') }));
         hint.value = null;
         await load();
     } catch (e) {
@@ -246,7 +247,7 @@ const onDragOver = (u, d) => {
     const same = fromUser.userId === u.userId;
     hint.value = {
         text: t('Time.dragging', {
-            task: chip.name, h: formatHm(chip.minutes), name: u.name, day: moment(d.date).format('ddd'),
+            task: chip.name, h: formatHm(chip.minutes), name: u.name, day: formatDisplayDate(d.date, 'ddd'),
             from: fromUser.name, fromPct: pctAfter(fromUser, same ? 0 : -chip.minutes), toPct: pctAfter(u, same ? 0 : chip.minutes),
         }),
     };
@@ -280,7 +281,7 @@ const suggestBalance = () => {
     if (!target) { hint.value = { text: t('Time.balance_none') }; return; }
     hint.value = {
         text: t('Time.balance_hint', {
-            task: chip.name, h: formatHm(chip.minutes), from: worst.u.name, day: moment(worst.d.date).format('ddd'), to: target.u.name,
+            task: chip.name, h: formatHm(chip.minutes), from: worst.u.name, day: formatDisplayDate(worst.d.date, 'ddd'), to: target.u.name,
             fromPct: pctAfter(worst.u, -chip.minutes), toPct: pctAfter(target.u, chip.minutes),
         }),
         apply: { chip, fromUser: worst.u, fromDay: worst.d, toUser: target.u, toDay: target.d },

@@ -15,6 +15,7 @@ export default { name: 'SprintStateChip' };
 <script setup>
 import { computed, defineProps } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 const props = defineProps({
     sprint: { type: Object, default: () => ({}) },
@@ -43,7 +44,7 @@ const state = computed(() => {
 
 const short = (value) => {
     const d = asDate(value);
-    return d ? d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '';
+    return d ? formatDisplayDate(d, 'D MMM') : '';
 };
 
 const range = computed(() => {

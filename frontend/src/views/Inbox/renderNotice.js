@@ -2,13 +2,14 @@ import { noticeTextOf } from "@/views/Ai/rateAlerts";
 import { escapeHtml, notificationHtml } from "@/utils/notificationHtml";
 import { REPORT_KEYS } from "@/views/Ai/agentSchedule";
 import { commentPlainText } from "@/utils/commentHtml";
+import { formatDisplayDate } from "@/views/Settings/Language/localePrefs";
 
 const clip = (value, max = 200) => String(value === undefined || value === null ? "" : value).slice(0, max);
 const DOC_COMMENT_KEYS = ["doc_comment_mention", "doc_comment_reply", "doc_comment_assigned"];
 
 const dayOf = (value) => {
     const date = new Date(value || "");
-    return Number.isNaN(date.getTime()) ? "" : date.toLocaleDateString();
+    return Number.isNaN(date.getTime()) ? "" : formatDisplayDate(date);
 };
 
 /* The HTML the Inbox shows for one row. Rows the app writes from data (AI alerts, agent client approval requests,

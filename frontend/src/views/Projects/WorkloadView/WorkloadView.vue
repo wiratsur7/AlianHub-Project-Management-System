@@ -159,6 +159,7 @@
     import { useStore } from "vuex";
     import { useI18n } from "vue-i18n";
     import moment from 'moment';
+    import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
     import '@vuepic/vue-datepicker/dist/main.css';
     import RangePickerComp from '@/components/molecules/RangePickerComp/RangePickerComp.vue';
     import SpinnerComp from '@/components/atom/SpinnerComp/SpinnerComp.vue';
@@ -219,7 +220,10 @@
 
     const nameOf = (id) => getUser(id)?.Employee_Name || '';
     const initial = (name) => (name || '?').trim().charAt(0).toUpperCase();
-    const dayHead = (d) => `${moment(d).format('dd').charAt(0)}${moment(d).format('D')}`;
+    const dayHead = (d) => {
+        const date = moment(d).toDate();
+        return `${formatDisplayDate(date, 'dd').charAt(0)}${formatDisplayDate(date, 'D')}`;
+    };
     const hLabel = (minutes) => {
         const h = (Number(minutes) || 0) / 60;
         return `${h >= 10 || Number.isInteger(h) ? Math.round(h) : Math.round(h * 10) / 10}h`;
@@ -292,8 +296,8 @@
         const off = u.cells.filter((d) => d.off);
         if (off.length) {
             const range = off.length === 1
-                ? moment(off[0].date).format('ddd')
-                : `${moment(off[0].date).format('ddd')}–${moment(off[off.length - 1].date).format('ddd')}`;
+                ? formatDisplayDate(moment(off[0].date).toDate(), 'ddd')
+                : `${formatDisplayDate(moment(off[0].date).toDate(), 'ddd')}–${formatDisplayDate(moment(off[off.length - 1].date).toDate(), 'ddd')}`;
             return t(off.every((d) => d.pto) ? 'Views.pto_range' : 'Views.unavailable_range', { range });
         }
         return gridUnit.value === 'hours' ? t('Views.per_day', { h: u.hoursPerDay }) : capacityRuleLabel(u);
@@ -365,7 +369,7 @@
                 toDate: toDay.date,
             })) || {}).data || {};
             if (!body.status) throw new Error(body.statusText || 'move_failed');
-            hint.value = { text: t('Views.moved', { task: chip.name, name: toUser.name, day: moment(toDay.date).format('ddd D') }) };
+            hint.value = { text: t('Views.moved', { task: chip.name, name: toUser.name, day: formatDisplayDate(moment(toDay.date).toDate(), 'ddd D') }) };
             await load();
         } catch (e) {
             error.value = t('Views.move_failed');
@@ -393,7 +397,7 @@
                 task: chip.name,
                 h: amountLabel(size(chip)),
                 name: u.name,
-                day: moment(d.date).format('ddd'),
+                day: formatDisplayDate(moment(d.date).toDate(), 'ddd'),
                 from: fromUser.name,
                 fromPct: pctAfter(fromUser, same ? 0 : -size(chip)),
                 toPct: pctAfter(u, same ? 0 : size(chip)),
@@ -435,7 +439,7 @@
                 task: chip.name,
                 h: amountLabel(size(chip)),
                 from: worst.u.name,
-                day: moment(worst.d.date).format('ddd'),
+                day: formatDisplayDate(moment(worst.d.date).toDate(), 'ddd'),
                 to: target.u.name,
                 fromPct: pctAfter(worst.u, -size(chip)),
                 toPct: pctAfter(target.u, size(chip)),

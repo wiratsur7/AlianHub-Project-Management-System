@@ -1,5 +1,6 @@
 import { apiRequestWithoutCompnay } from "@/services";
 import * as env from "@/config/env";
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 const unwrap = (res) => {
     const body = res?.data;
@@ -44,4 +45,4 @@ export const formatBytes = (n) => {
     return `${v.toFixed(i ? 1 : 0)} ${units[i]}`;
 };
 
-export const formatWhen = (value) => (value ? new Date(value).toLocaleString() : "—");
+export const formatWhen = (value) => (value ? formatDisplayDate(value, 'L h:mm A') : "—");

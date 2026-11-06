@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { resolveTimeZone, snoozeTarget, zonedToUtc } from '@/views/Inbox/snoozePresets';
+import { formatWhen, resolveTimeZone, snoozeTarget, zonedToUtc } from '@/views/Inbox/snoozePresets';
 import { laterStorageKey, migrateLegacyLater, readLegacyLater } from '@/views/Inbox/laterMigration';
 
 describe('snooze presets, in the reader\'s time zone', () => {
@@ -40,6 +40,13 @@ describe('snooze presets, in the reader\'s time zone', () => {
         expect(resolveTimeZone('Asia/Kolkata')).toBe('Asia/Kolkata');
         expect(resolveTimeZone('Not/AZone')).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone);
         expect(resolveTimeZone('')).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone);
+    });
+
+    it('localizes the time-zone-aware label with Thai digits', () => {
+        const label = formatWhen('2026-09-24T18:00:00.000Z', 'Asia/Bangkok', 'th', {
+            language: 'th', calendar: 'buddhist', numerals: 'thai'
+        });
+        expect(label).toContain('๒๕');
     });
 });
 

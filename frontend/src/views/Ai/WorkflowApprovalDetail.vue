@@ -70,7 +70,7 @@ import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute } from "vue-router";
 import { useStore } from "vuex";
-import moment from "moment";
+import { formatDisplayDate, formatRelativeTime } from '@/views/Settings/Language/localePrefs';
 import ShellIcon from "@/components/organisms/Shell/ShellIcon.vue";
 import SimulatedChip from "@/components/atom/SimulatedChip/SimulatedChip.vue";
 import { canDecide, deadlineOf, escalationOf, handoversOf, ownerOf } from "./workflowApprovals";
@@ -113,9 +113,9 @@ const ownerLabel = computed(() => {
 const deadline = computed(() => deadlineOf(props.approval));
 const deadlineLabel = computed(() => {
     if (!deadline.value) return t("Workflows.approval_deadline_none");
-    const when = moment(deadline.value.at).format("D MMM, H:mm");
+    const when = formatDisplayDate(deadline.value.at, 'D MMM, H:mm');
     if (deadline.value.overdue) return t("Workflows.approval_deadline_overdue", { at: when });
-    return t("Workflows.approval_deadline_at", { at: when, away: moment(deadline.value.at).fromNow() });
+    return t("Workflows.approval_deadline_at", { at: when, away: formatRelativeTime(deadline.value.at) });
 });
 
 const escalation = computed(() => escalationOf(props.approval));
@@ -123,9 +123,9 @@ const escalationLabel = computed(() => {
     const path = escalation.value;
     if (!path) return t("Workflows.approval_escalation_none");
     const who = path.name || t("Workflows.approval_escalation_someone");
-    if (path.escalated) return t("Workflows.approval_escalation_done", { who, at: moment(path.escalatedAt).fromNow() });
+    if (path.escalated) return t("Workflows.approval_escalation_done", { who, at: formatRelativeTime(path.escalatedAt) });
     if (!path.at) return t("Workflows.approval_escalation_to", { who });
-    return t("Workflows.approval_escalation_at", { who, at: moment(path.at).format("D MMM, H:mm") });
+    return t("Workflows.approval_escalation_at", { who, at: formatDisplayDate(path.at, 'D MMM, H:mm') });
 });
 
 const handovers = computed(() => handoversOf(props.approval));
@@ -133,7 +133,7 @@ const handoverLine = (move) => t("Workflows.approval_handover_line", {
     by: move.byName || t("Workflows.approval_handover_system"),
     from: move.fromName || t("Workflows.approval_owner_none"),
     to: move.toName || t("Workflows.approval_escalation_someone"),
-    at: move.at ? moment(move.at).format("D MMM, H:mm") : ""
+    at: move.at ? formatDisplayDate(move.at, 'D MMM, H:mm') : ""
 });
 
 /* The people a request can be handed to are the company's members, less whoever

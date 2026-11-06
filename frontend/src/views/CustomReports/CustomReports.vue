@@ -176,6 +176,7 @@ import * as env from '@/config/env';
 import ReportsTabs from '@/views/Projects/Reports/ReportsTabs.vue';
 import EmptyState from '@/components/atom/EmptyState/EmptyState.vue';
 import { useChartTokens } from '@/utils/chartTokens';
+import { formatDisplayNumber } from '@/views/Settings/Language/localePrefs';
 
 defineOptions({ name: 'CustomReportBuilder' });
 
@@ -264,9 +265,10 @@ const clearFilters = () => {
 const total = computed(() => rows.value.reduce((a, r) => a + (r.value || 0), 0));
 const formatValue = (value) => {
     const n = Number(value) || 0;
-    if (unit.value === 'currency') return `${Math.round(n).toLocaleString()}`;
-    if (unit.value === 'hours') return `${Math.round(n * 10) / 10}h`;
-    return `${Math.round(n * 10) / 10}`;
+    if (unit.value === 'currency') return formatDisplayNumber(Math.round(n), undefined, { maximumFractionDigits: 0 });
+    const rounded = Math.round(n * 10) / 10;
+    const display = formatDisplayNumber(rounded, undefined, { maximumFractionDigits: 1 });
+    return unit.value === 'hours' ? `${display}h` : display;
 };
 
 const previewMeta = computed(() => {

@@ -161,6 +161,7 @@ import { decorateMentions } from './docMentions';
 import { hydrateDocImages } from './docImages';
 import { useMentionLinks } from './useMentionLinks';
 import { diffBlocks, diffSummary, diffWords } from './pageDiff';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 const { blocksToHtml, escapeHtml, TASK_TOKEN_PATTERN } = pageContent.default || pageContent;
 
@@ -261,7 +262,7 @@ const reasonKey = (reason) => `Docs.history_reason_${REASONS.includes(reason) ? 
 function dateTime(value) {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return '—';
-    return date.toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    return formatDisplayDate(date, 'D MMM YYYY HH:mm');
 }
 
 const blockHtml = (block) => richHtml(blocksToHtml([block]).replace(TASK_TOKEN_PATTERN, (token, taskId, taskKey) => escapeHtml(taskKey)));

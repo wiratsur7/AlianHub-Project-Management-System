@@ -186,6 +186,7 @@ import { useStore } from 'vuex';
 import { apiRequest } from '../../../services';
 import { useI18n } from 'vue-i18n';
 import { isOwnerOrAdmin } from '@/utils/roles';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 import {
     fetchCloudSettings,
     saveCloudSettings,
@@ -249,7 +250,7 @@ const urlPlaceholder = computed(() =>
 const eventLabel = (ev) => (EVENT_LABEL_KEY[ev] ? t(`Integrations.${EVENT_LABEL_KEY[ev]}`) : ev);
 const eventsSummary = (events) => (events && events.includes('*')) ? t('Integrations.all_events') : (events || []).map(eventLabel).join(', ');
 const shortUrl = (url) => { const u = String(url || ''); return u.length > 52 ? u.slice(0, 52) + '…' : u; };
-const formatTime = (d) => { try { return new Date(d).toLocaleString(); } catch (e) { return ''; } };
+const formatTime = (d) => { try { return formatDisplayDate(d, 'L h:mm A'); } catch (e) { return ''; } };
 const lastDeliveryLabel = (hook) => hook.lastDeliveredAt
     ? `${t('Integrations.last')}: ${hook.lastStatus || '—'} · ${formatTime(hook.lastDeliveredAt)}`
     : t('Integrations.no_deliveries');

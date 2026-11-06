@@ -93,6 +93,7 @@ import { useI18n } from 'vue-i18n';
 import { useToast } from 'vue-toast-notification';
 import * as env from '@/config/env';
 import { apiRequest } from '@/services';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 const { t } = useI18n();
 const $toast = useToast();
@@ -111,7 +112,7 @@ const draft = ref(emptyDraft());
 const createError = ref('');
 
 const ok = (res) => Boolean(res && res.data && res.data.status);
-const when = (d) => (d ? new Date(d).toLocaleString() : t('Secrets.never'));
+const when = (d) => (d ? formatDisplayDate(d, 'L h:mm A') : t('Secrets.never'));
 const kindLabel = (kind) => (['integration', 'webhook', 'skill_read'].includes(kind) ? t(`Secrets.kind_${kind}`) : kind);
 const hostList = (text) => String(text || '').split(/[\s,]+/).map((h) => h.trim()).filter(Boolean);
 const replace = (row) => { secrets.value = secrets.value.map((s) => (s.handle === row.handle ? { ...s, ...row } : s)); };

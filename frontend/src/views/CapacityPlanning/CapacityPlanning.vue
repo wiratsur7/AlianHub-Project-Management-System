@@ -80,6 +80,7 @@ import { useI18n } from 'vue-i18n';
 import moment from 'moment';
 import { apiRequest } from '@/services';
 import * as env from '@/config/env';
+import { formatDisplayDate, formatDisplayNumber } from '@/views/Settings/Language/localePrefs';
 
 defineOptions({ name: 'CapacityPlanning' });
 
@@ -101,10 +102,10 @@ const whatIf = ref({ teamId: '', hours: 0 });
 const TIGHT_PCT = 90;
 const toKey = (m) => m.format('YYYY-MM');
 const toIso = computed(() => from.value.clone().add(span.value - 1, 'months'));
-const rangeLabel = computed(() => `${from.value.format('MMM')} – ${toIso.value.format('MMM')}`.toUpperCase());
-const monthLabel = (m) => moment(m, 'YYYY-MM').format('MMM').toUpperCase();
-const monthName = (m) => moment(m, 'YYYY-MM').format('MMMM');
-const fmtH = (h) => Math.round(Number(h) || 0).toLocaleString();
+const rangeLabel = computed(() => `${formatDisplayDate(from.value.toDate(), 'MMM')} – ${formatDisplayDate(toIso.value.toDate(), 'MMM')}`.toUpperCase());
+const monthLabel = (m) => formatDisplayDate(new Date(`${m}-01T00:00:00`), 'MMM').toUpperCase();
+const monthName = (m) => formatDisplayDate(new Date(`${m}-01T00:00:00`), 'MMMM');
+const fmtH = (h) => formatDisplayNumber(Math.round(Number(h) || 0), undefined, { maximumFractionDigits: 0 });
 const teamName = (tm) => (tm.unassigned ? t('Time.unassigned_team') : tm.name);
 const isFar = (m) => months.value.indexOf(m) >= 3;
 

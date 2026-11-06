@@ -84,6 +84,7 @@ import ShellIcon from '@/components/organisms/Shell/ShellIcon.vue';
 import { apiRequest } from '@/services';
 import * as env from '@/config/env';
 import { isOwnerOrAdmin } from '@/utils/roles';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 const { t } = useI18n();
 const { getters } = useStore();
@@ -103,7 +104,7 @@ const channelError = ref('');
 const picked = ref({});
 
 const privileged = computed(() => isOwnerOrAdmin(Number(getters['settings/companyUserDetail']?.roleType)));
-const when = (d) => (d ? new Date(d).toLocaleString() : t('SlackConnector.never'));
+const when = (d) => (d ? formatDisplayDate(d, 'L h:mm A') : t('SlackConnector.never'));
 const secretOf = (key) => (conn.value && conn.value.secrets && conn.value.secrets[key]) || { set: false };
 const stateLine = (key) => {
     const secret = secretOf(key);

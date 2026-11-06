@@ -63,6 +63,7 @@ import { apiRequest } from '@/services';
 import { useGetterFunctions } from '@/composable';
 import ShellIcon from '@/components/organisms/Shell/ShellIcon.vue';
 import EmptyState from '@/components/atom/EmptyState/EmptyState.vue';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 const KINDS = ['projects', 'folders', 'lists', 'tasks', 'docs'];
 const ICONS = { projects: 'projects', folders: 'book', lists: 'layout', tasks: 'checkSquare', docs: 'file' };
@@ -88,7 +89,7 @@ const projectNameOf = (id) => {
 const shortDate = (value) => {
     if (!value) return '';
     const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    return Number.isNaN(date.getTime()) ? '' : formatDisplayDate(date, 'D MMM');
 };
 
 async function load() {

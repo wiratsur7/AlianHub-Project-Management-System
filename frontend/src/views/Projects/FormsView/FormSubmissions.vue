@@ -84,6 +84,7 @@ import { downloadExport } from '@/composable/exportDownload';
 import { storageHelper } from '@/composable/commonFunction';
 import { openTask } from '@/components/organisms/TaskDetailOverlay/useTaskOverlay';
 import FormIcon from './FormIcon.vue';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 const { t } = useI18n();
 // The same pair every other attachment in the app uses to turn a storage key into
@@ -114,7 +115,7 @@ const anyTask = computed(() => submissions.value.some((s) => s.taskKey));
 const when = (value) => {
     if (!value) return '—';
     const d = new Date(value);
-    return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString();
+    return Number.isNaN(d.getTime()) ? '—' : formatDisplayDate(d, 'L h:mm A');
 };
 
 const openSubmissionTask = (task) => openTask({

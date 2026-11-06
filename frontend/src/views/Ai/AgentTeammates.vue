@@ -152,6 +152,7 @@ import WorkspaceGuideAdd from "./WorkspaceGuideAdd.vue";
 import { useParity } from "./useParity";
 import { reasonOf } from "./useAgents";
 import { useAgentAccess } from "./agentAccess";
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 // Agents as teammates (13b): they appear in Members with an AGENT tag, they can
 // be @mentioned into a run, and assigning one states its scope and limits first.
@@ -197,7 +198,7 @@ const ownerNameOf = (agent) => {
 const lastActiveOf = (agent) => {
     const last = runs.value.find((r) => String(r.agentId) === String(agent._id));
     if (!last) return "";
-    return new Date(last.startedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    return formatDisplayDate(last.startedAt, 'HH:mm');
 };
 
 /* Split a comment so the @mention can be tinted without handing raw text to v-html. */
@@ -228,7 +229,7 @@ const onMention = async ({ body, agent }) => {
     thread.value.push({
         who: t("Parity.you"),
         initial: "•",
-        at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        at: formatDisplayDate(new Date(), 'HH:mm'),
         parts: mentionParts(body)
     });
     if (!agent) return;

@@ -80,6 +80,7 @@
     import FixMilestoneInput from '@/components/atom/FixMilestoneInput/FixMilestoneInput.vue';
     import { computed, defineProps,ref,inject, onMounted, watch } from 'vue';
     import UpgradePlan from '@/components/atom/UpgradYourPlanComponent/UpgradYourPlanComponent.vue';
+    import { formatDisplayNumber } from '@/views/Settings/Language/localePrefs';
     const { 
         deleteMilestoneHelper,
         addMilestoneHelper,
@@ -187,8 +188,7 @@
     };
     
     const getCommaSeperatedNumber = (n)=> {
-        let numVal = Number(n)
-        return numVal.toLocaleString('en-US', {maximumFractionDigits: 2, minimumFractionDigits: 2, useGrouping: true});
+        return formatDisplayNumber(Number(n), undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     };
     //api for edit milestone
     const handleEditMilestone = (action,val,data,status,prevMilestoneName) => {

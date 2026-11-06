@@ -164,6 +164,7 @@ import AiModelNotice from '@/components/molecules/AiUnavailable/AiModelNotice.vu
 import { computed, inject, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import moment from "moment";
+import { formatRelativeTime } from '@/views/Settings/Language/localePrefs';
 import { dayClockText } from "@/utils/clockText";
 import ShellIcon from "@/components/organisms/Shell/ShellIcon.vue";
 import EmptyState from "@/components/atom/EmptyState/EmptyState.vue";
@@ -199,7 +200,7 @@ const candidateMeta = computed(() => t("Pipeline.candidate_meta", {
 
 const notesDraft = computed(() => (staging.value.proposals || []).find((p) => (p.actions || []).includes("page.draft") && p.status === "pending") || null);
 
-const stagingAge = computed(() => (staging.value.last?.decidedAt ? moment(staging.value.last.decidedAt).fromNow(true) : t("Pipeline.none")));
+const stagingAge = computed(() => (staging.value.last?.decidedAt ? formatRelativeTime(staging.value.last.decidedAt, true) : t("Pipeline.none")));
 const stagingWho = computed(() => (staging.value.last ? t("Pipeline.staging_by", { agent: staging.value.last.agentName }) : t("Pipeline.staging_never")));
 const stagingLine = computed(() => (staging.value.last
     ? `${dayClockText(staging.value.last.decidedAt)} · ${staging.value.last.status}`
@@ -225,7 +226,7 @@ const neverLine = computed(() => t("Pipeline.never_line", { keys: (production.va
 const checks = computed(() => [
     { key: "done", state: counts.value.done ? "ok" : "todo", label: t("Pipeline.check_done", { n: counts.value.done }, counts.value.done) },
     { key: "human", state: "ok", label: t("Pipeline.check_human") },
-    { key: "staging", state: staging.value.last ? "ok" : "todo", label: staging.value.last ? t("Pipeline.check_staging_ok", { at: moment(staging.value.last.decidedAt).fromNow() }) : t("Pipeline.check_staging_todo") },
+    { key: "staging", state: staging.value.last ? "ok" : "todo", label: staging.value.last ? t("Pipeline.check_staging_ok", { at: formatRelativeTime(staging.value.last.decidedAt) }) : t("Pipeline.check_staging_todo") },
     { key: "ci", state: "unknown", label: t("Pipeline.check_ci") }
 ]);
 
@@ -235,7 +236,7 @@ const history = computed(() => {
         .slice(0, 5)
         .map((p) => ({
             key: p._id,
-            at: moment(p.decidedAt).fromNow(true),
+            at: formatRelativeTime(p.decidedAt, true),
             what: t("Pipeline.hist_staging", { agent: p.agentName, status: p.status }),
             refused: p.status === "declined"
         }));
@@ -244,7 +245,7 @@ const history = computed(() => {
         .slice(0, 3)
         .map((r) => ({
             key: r._id,
-            at: moment(r.at).fromNow(true),
+            at: formatRelativeTime(r.at, true),
             what: t("Pipeline.hist_refused", { who: r.actorName || "—", action: r.action }),
             refused: true
         }));

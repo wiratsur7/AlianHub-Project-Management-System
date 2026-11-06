@@ -264,6 +264,7 @@ import SkillsSelect from '@/components/molecules/SkillsSelect/SkillsSelect.vue';
 import ProjectSourceSelect from '@/components/molecules/ProjectSourceSelect/ProjectSourceSelect.vue';
 import ProjectWorkingDays from '@/components/molecules/WorkingDaysPicker/ProjectWorkingDays.vue';
 import { DEFAULT_SOURCE, checkProposalId, cleanProposalId } from '@/utils/projectSource';
+import { formatDisplayNumber } from '@/views/Settings/Language/localePrefs';
 
 const { checkPermission,checkApps,getAppState } = useCustomComposable();
 provide('customFieldForProject', true);
@@ -321,8 +322,7 @@ const createdByUser = getUser(props?.projectData?.projectCreatedBy || '');
 
 // convert the number into us formate 
 const getCommaSeperatedNumber = (n)=> {
-    let numVal = Number(n)
-    return numVal.toLocaleString('en-US', {maximumFractionDigits: 2, minimumFractionDigits: 2, useGrouping: true});
+    return formatDisplayNumber(Number(n), undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 };
 
 // project status update

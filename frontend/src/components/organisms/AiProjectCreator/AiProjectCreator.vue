@@ -533,6 +533,7 @@ import SkillsSelect from '@/components/molecules/SkillsSelect/SkillsSelect.vue';
 import ProjectSourceSelect from '@/components/molecules/ProjectSourceSelect/ProjectSourceSelect.vue';
 import { PROJECT_SOURCES, checkProposalId } from '@/utils/projectSource';
 import { useI18n } from 'vue-i18n';
+import { formatDisplayNumber } from '@/views/Settings/Language/localePrefs';
 
 export default defineComponent({
     name: 'AiProjectCreator',
@@ -817,7 +818,7 @@ export default defineComponent({
             return mins ? `${hours}h ${mins}m` : `${hours}h`;
         };
 
-        const formatTokens = (n) => Number(n || 0).toLocaleString();
+        const formatTokens = (n) => formatDisplayNumber(Number(n || 0), undefined, { maximumFractionDigits: 0 });
         // Sub-cent runs are normal, so two decimals would read as "$0.00".
         const formatCost = (n) => (n >= 0.01 ? `$${n.toFixed(2)}` : `$${n.toFixed(4)}`);
 

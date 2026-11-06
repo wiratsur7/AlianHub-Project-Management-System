@@ -119,6 +119,7 @@ import { apiRequest } from "@/services";
 import { useCustomComposable } from "@/composable";
 import { useEscapeLayer } from "@/composable/useEscapeLayer";
 import { emptyRepeat, repeatFromRule, ruleFromRepeat, repeatProblem, describeRepeat, upcomingRuns, weekdayNames } from "./taskRepeat";
+import { formatDisplayDate, localePrefs } from '@/views/Settings/Language/localePrefs';
 
 defineOptions({ name: "TaskRepeatControl" });
 
@@ -154,7 +155,8 @@ const unitKey = computed(() => ({ daily: "TaskPanel.repeat_unit_days", weekly: "
 const nextText = computed(() => {
     const runs = upcomingRuns(ruleFromRepeat(form), { runCount: rule.value?.runCount || 0 });
     if (!runs.length) return t("TaskPanel.repeat_no_next");
-    const dates = runs.map((d) => d.toLocaleDateString(locale.value, { weekday: "short", day: "numeric", month: "short" })).join(", ");
+    const prefs = { ...localePrefs, language: locale.value || localePrefs.language };
+    const dates = runs.map((d) => formatDisplayDate(d, 'ddd D MMM', prefs)).join(", ");
     return t("TaskPanel.repeat_next", { dates });
 });
 

@@ -54,6 +54,7 @@ import { useI18n } from "vue-i18n";
 import { useToast } from "vue-toast-notification";
 import ShellIcon from "@/components/organisms/Shell/ShellIcon.vue";
 import { useInstanceApi, formatWhen } from "./useInstanceApi";
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 defineOptions({ name: "InstanceStats" });
 
@@ -138,7 +139,7 @@ const buildLine = computed(() => {
 // process start" — a restart must not make an old build look fresh.
 const builtAtLine = computed(() => {
     const at = (stats.value || {}).builtAt;
-    return at ? new Date(at).toLocaleString() : "";
+    return at ? formatDisplayDate(at, 'L h:mm A') : "";
 });
 
 onMounted(async () => {

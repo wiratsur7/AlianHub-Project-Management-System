@@ -51,6 +51,7 @@
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { failureOf } from "./workflowRun";
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 defineOptions({ name: "WorkflowFailedStep" });
 
@@ -70,6 +71,6 @@ const backoffLabel = computed(() => {
     const { ms, at } = failure.value.backoff;
     const seconds = Math.round(ms / 1000);
     const wait = seconds >= 60 ? t("Workflows.backoff_m", { n: (seconds / 60).toFixed(1) }) : t("Workflows.backoff_s", { n: seconds });
-    return at ? t("Workflows.backoff_at", { wait, at: new Date(at).toLocaleString() }) : wait;
+    return at ? t("Workflows.backoff_at", { wait, at: formatDisplayDate(at, 'L h:mm A') }) : wait;
 });
 </script>

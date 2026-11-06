@@ -112,6 +112,7 @@ import AgentRunReplay from "./AgentRunReplay.vue";
 import AgentRunTrace from "./AgentRunTrace.vue";
 import { taintKindLabel, taintSourcesOf } from "./taintText";
 import { skillSourceLabel } from "./skillSourceText";
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 defineOptions({ name: "AgentRunDetail" });
 
@@ -170,7 +171,7 @@ const copyRequestId = async () => {
     }
 };
 
-const when = (at) => (at ? new Date(at).toLocaleString() : "");
+const when = (at) => (at ? formatDisplayDate(at, 'L h:mm A') : "");
 const chip = (decision) => (decision === "act" ? "ah-chip--ok" : decision === "refuse" ? "ah-chip--danger" : "ah-chip--warn");
 
 const load = async () => {

@@ -133,6 +133,7 @@ import * as env from "@/config/env";
 import { reasonOf } from "@/views/Ai/useAgents";
 import { budgetView, featureLabelKey } from "./agentBudget";
 import { isOwnerOrAdmin } from "@/utils/roles";
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 defineOptions({ name: "InstanceAgents" });
 
@@ -158,7 +159,7 @@ const dailyLine = computed(() => (view.value.daily.cap > 0
     ? t("Instance.agent_usage_line", { used: view.value.daily.used.toFixed(2), cap: view.value.daily.cap.toFixed(0), percent: view.value.daily.percent })
     : t("Instance.agent_usage_daily_uncapped", { used: view.value.daily.used.toFixed(2) })));
 
-const when = (at) => (at ? new Date(at).toLocaleString() : "");
+const when = (at) => (at ? formatDisplayDate(at, 'L h:mm A') : "");
 const featureLabel = (feature) => t(featureLabelKey(feature));
 const alertChip = (a) => (!a.at ? "ah-chip--mono" : a.threshold >= 100 ? "ah-chip--danger" : "ah-chip--warn");
 

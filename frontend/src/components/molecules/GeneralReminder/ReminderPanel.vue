@@ -121,6 +121,7 @@ import { useCustomComposable } from '@/composable';
 import * as env from '@/config/env';
 import ReminderModal from './ReminderModal.vue';
 import horizontalDots from '@/assets/images/svg/horizontalDots.svg';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 const props = defineProps({
     modelValue: { type: Boolean, default: false },
@@ -340,10 +341,10 @@ function formatWhen(value) {
     const tomorrow = new Date();
     tomorrow.setDate(today.getDate() + 1);
     const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-    const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).toLowerCase().replace(' ', '');
+    const time = formatDisplayDate(d, 'h:mm A');
     if (sameDay(d, today)) return `${t('Reminders.today')}, ${time}`;
     if (sameDay(d, tomorrow)) return `${t('Reminders.tomorrow')}, ${time}`;
-    return `${d.toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' })}, ${time}`;
+    return formatDisplayDate(d, 'L h:mm A');
 }
 
 function notifyText(item) {

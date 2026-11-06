@@ -1,10 +1,9 @@
 // The lines of a waiting folder and of a list waiting to become a sprint (Modules/Agents/listSetupPreview.js).
 // A sprint's days arrive as days when they are asked for and as moments when the list already has them; both are
 // shown as days where the viewer is.
+import { formatDisplayDate, localePrefs } from '@/views/Settings/Language/localePrefs';
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
-const MEDIUM = Object.freeze({ dateStyle: 'medium' });
-
 const textOf = (value) => (typeof value === 'string' ? value.trim() : '');
 const countOf = (value) => (Number.isFinite(value) && value > 0 ? Math.floor(value) : 0);
 const named = (labelKey) => (t, line) => (textOf(line.name) ? { label: t(labelKey), text: textOf(line.name) } : null);
@@ -13,11 +12,7 @@ const dayText = (locale, value) => {
     const given = textOf(value);
     const date = new Date(DAY.test(given) ? `${given}T00:00:00` : given);
     if (!given || Number.isNaN(date.getTime())) return '';
-    try {
-        return new Intl.DateTimeFormat(locale, MEDIUM).format(date);
-    } catch (error) {
-        return new Intl.DateTimeFormat(undefined, MEDIUM).format(date);
-    }
+    return formatDisplayDate(date, 'LL', { ...localePrefs, language: locale || localePrefs.language });
 };
 
 const days = (labelKey) => (t, line, locale) => {

@@ -60,6 +60,7 @@
 <script setup>
 import { useI18n } from 'vue-i18n';
 import WasabiImage from '@/components/atom/WasabiIamgeCompp/WasabiIamgeCompp.vue';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 const { t } = useI18n();
 
@@ -100,7 +101,7 @@ const createdLabel = (p) => {
     const startDay = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
     if (startDay === startToday) return t('dashboardCard.today');
     if (startDay === startToday - dayMs) return t('dashboardCard.yesterday');
-    return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+    return formatDisplayDate(d, 'D MMM');
 };
 </script>
 

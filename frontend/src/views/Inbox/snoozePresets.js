@@ -1,4 +1,5 @@
 import { hourCycleOption } from '@/utils/clockText';
+import { localePrefs, localeTagOf, toNumerals } from '@/views/Settings/Language/localePrefs';
 
 export const SNOOZE_PRESETS = Object.freeze(['later_today', 'tomorrow', 'next_week', 'until_change']);
 
@@ -84,10 +85,14 @@ export const snoozeTarget = (preset, { now = new Date(), timeZone, value } = {})
     return { until: at.toISOString() };
 };
 
-export const formatWhen = (iso, timeZone, locale) => {
+export const formatWhen = (iso, timeZone, locale, prefs = localePrefs) => {
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return '';
-    return d.toLocaleString(locale || [], {
-        timeZone: resolveTimeZone(timeZone), weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', ...hourCycleOption(),
-    });
+    const options = {
+        timeZone: resolveTimeZone(timeZone),
+        weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+        calendar: prefs.calendar || 'gregory', numberingSystem: 'latn', ...hourCycleOption(),
+    };
+    const formatter = (language) => new Intl.DateTimeFormat(language, options).format(d);
+    try { return toNumerals(formatter(localeTagOf(locale || prefs.language)), prefs.numerals); } catch (e) { return toNumerals(formatter(undefined), prefs.numerals); }
 };

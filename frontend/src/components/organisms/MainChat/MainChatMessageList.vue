@@ -105,6 +105,7 @@ import { isAgentComment } from '@/utils/commentSide';
 import MainChatMessage from './MainChatMessage.vue';
 import MainChatAvatar from './MainChatAvatar.vue';
 import MainChatIcon from './MainChatIcon.vue';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 const GROUP_WINDOW = 5 * 60 * 1000;
 const AT_BOTTOM_SLACK = 48;
@@ -164,7 +165,7 @@ function dayLabel(ts) {
     const yesterday = today - 86400000;
     if (ts === today) return t('MainChat.today');
     if (ts === yesterday) return t('MainChat.yesterday');
-    return new Date(ts).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' });
+    return formatDisplayDate(ts, 'D MMM YYYY');
 }
 
 const unreadLabel = computed(() => (props.unreadCount === 1

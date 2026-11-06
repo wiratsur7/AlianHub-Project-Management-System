@@ -86,6 +86,7 @@ import { resolveCardRange } from '@/composable/useResourceWorkload';
 import UserProfile from '@/components/atom/UserProfile/UserProfile.vue';
 import CardSkeleton from '@/components/atom/CardSkeleton/CardSkeleton.vue';
 import TaskDetail from '@/views/TaskDetail/TaskDetail.vue';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 // On Leave card — leaves are tracked as tickets in a designated project
 // (picked in the card settings) with an "approved" status (also picked
@@ -135,7 +136,7 @@ const statusStyle = (key) => {
     return color ? { backgroundColor: `${color}22`, color } : {};
 };
 
-const fmt = (d) => (d ? new Date(d).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '');
+const fmt = (d) => (d ? formatDisplayDate(d, 'D MMM') : '');
 const periodOf = (r) => {
     const from = fmt(r.startDate);
     const to = fmt(r.dueDate);

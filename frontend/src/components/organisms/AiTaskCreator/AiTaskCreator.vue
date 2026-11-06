@@ -186,6 +186,7 @@ import { ref, computed, watch, defineProps, defineEmits } from 'vue';
 import { useToast } from 'vue-toast-notification';
 import { useI18n } from 'vue-i18n';
 import { useAiTaskGenerator } from '@/composable/aiTaskGenerator';
+import { formatDisplayNumber } from '@/views/Settings/Language/localePrefs';
 
 const props = defineProps({
     modelValue: { type: Boolean, default: false },
@@ -223,7 +224,7 @@ const runUsage = computed(() => {
         model: u.model || '',
     };
 });
-const formatTokens = (n) => Number(n || 0).toLocaleString();
+const formatTokens = (n) => formatDisplayNumber(Number(n || 0), undefined, { maximumFractionDigits: 0 });
 // Sub-cent runs are normal, so two decimals would read as "$0.00".
 const formatCost = (n) => (n >= 0.01 ? `$${n.toFixed(2)}` : `$${n.toFixed(4)}`);
 const usageTooltip = computed(() => {

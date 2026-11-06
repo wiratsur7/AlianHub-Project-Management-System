@@ -205,6 +205,7 @@ import * as env from "@/config/env";
 import { memberData } from "./helperMember.js";
 import { fetchConnectedAgents } from "@/views/Ai/useRunnableAgents";
 import { ROLE_GUEST, ROLE_OWNER, ROLE_ADMIN, ROLE_MEMBER } from "@/utils/roles";
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 defineOptions({ name: "MembersSettings" });
 
@@ -288,7 +289,7 @@ function initial(item) {
 function invitedOn(item) {
     const raw = item.createdAt || item.updatedAt;
     if (!raw) return "—";
-    return new Date(raw).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+    return formatDisplayDate(raw, 'D MMM');
 }
 
 const shortSpan = (minutes) => {

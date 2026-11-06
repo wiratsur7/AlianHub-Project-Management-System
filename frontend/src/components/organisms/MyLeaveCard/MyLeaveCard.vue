@@ -52,6 +52,7 @@ import * as env from '@/config/env';
 import { buildFilterQuery } from '@/composable/commonFunction';
 import CardSkeleton from '@/components/atom/CardSkeleton/CardSkeleton.vue';
 import TaskDetail from '@/views/TaskDetail/TaskDetail.vue';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 // Member self-card — my own leave tickets (in the configured leave project)
 // across all statuses, so I can see where each request stands. Self-scoped
@@ -83,7 +84,7 @@ const statusStyle = (key) => {
     return color ? { backgroundColor: `${color}22`, color } : {};
 };
 
-const fmt = (d) => (d ? new Date(d).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '');
+const fmt = (d) => (d ? formatDisplayDate(d, 'D MMM') : '');
 const periodOf = (r) => {
     const from = fmt(r.startDate);
     const to = fmt(r.dueDate);

@@ -72,6 +72,7 @@ import { useI18n } from "vue-i18n";
 import { useToast } from "vue-toast-notification";
 import { useAgents } from "./useAgents";
 import { diffSnapshots, defaultPair } from "./revisionDiff";
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 defineOptions({ name: "AgentRevisionHistory" });
 
@@ -105,7 +106,7 @@ const diffTitle = computed(() => t("Ai.revision_diff_title", { from: fromLabel.v
 
 const canPromote = (r) => r.state === "draft" || r.state === "candidate";
 const stateChip = (state) => ({ live: "ah-chip--ok", candidate: "ah-chip--brand", draft: "ah-chip--warn", superseded: "ah-chip--dark" }[state] || "");
-const when = (at) => (at ? new Date(at).toLocaleString() : "");
+const when = (at) => (at ? formatDisplayDate(at, 'L h:mm A') : "");
 const whoOf = (r) => r.createdByName || r.createdBy || t("Ai.revision_by_system");
 
 const whatOf = (r) => {

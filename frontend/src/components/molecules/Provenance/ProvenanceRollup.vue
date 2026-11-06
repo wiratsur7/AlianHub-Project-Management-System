@@ -42,6 +42,7 @@ import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { apiRequest } from "@/services";
 import * as env from "@/config/env";
+import { formatDisplayNumber } from "@/views/Settings/Language/localePrefs";
 import { PATTERNS } from "./provenance";
 import "./style.css";
 
@@ -52,7 +53,7 @@ const props = defineProps({
     sprintName: { type: String, default: "" }
 });
 
-const { t, locale } = useI18n();
+const { t } = useI18n();
 const data = ref({});
 const loaded = ref(false);
 const error = ref("");
@@ -63,12 +64,11 @@ const title = computed(() => t("Provenance.rollup_title", {
     name: props.sprintName || data.value.sprint?.name || t("Provenance.this_project")
 }));
 
-const percent = computed(() => new Intl.NumberFormat(locale.value, { style: "percent", maximumFractionDigits: 0 }));
-
 const rows = computed(() => PATTERNS.map((pattern) => {
     const tasks = Number(data.value.byPattern?.[pattern]?.tasks) || 0;
     const share = closed.value ? tasks / closed.value : 0;
-    return { key: pattern.toLowerCase(), tasks, share, pct: percent.value.format(share) };
+    const pct = `${formatDisplayNumber(share * 100, undefined, { maximumFractionDigits: 0 })}%`;
+    return { key: pattern.toLowerCase(), tasks, share, pct };
 }));
 
 const barLabel = computed(() => rows.value

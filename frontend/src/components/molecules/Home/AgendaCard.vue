@@ -13,7 +13,7 @@
         </router-link>
         <p v-if="!items.length" class="hc-hint hc-agenda__hint">{{ firstRun ? $t('Home.agenda_hint') : $t('Home.agenda_empty') }}</p>
         <div v-for="item in items" :key="item.id" class="hc-agenda__item">
-            <span class="hc-agenda__time">{{ item.start.format('HH:mm') }}</span>
+            <span class="hc-agenda__time">{{ formatDisplayDate(item.start.toDate(), 'HH:mm') }}</span>
             <div class="hc-block" :class="`hc-block--${item.kind}`" :title="item.title">
                 <template v-if="item.kind === 'reminder'">{{ $t('Home.reminder_prefix', { title: item.title }) }}</template>
                 <template v-else-if="item.kind === 'focus'">{{ $t('Home.focus_prefix', { title: item.title || durationLabel(item) }) }}</template>
@@ -26,6 +26,7 @@
 <script setup>
 import { computed, defineEmits, defineProps, inject } from "vue";
 import moment from "moment";
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 import { useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { fmtEstimate } from "./homeFormat";
@@ -44,7 +45,7 @@ const router = useRouter();
 const { t } = useI18n();
 const companyId = inject("$companyId");
 
-const dayLabel = computed(() => (moment(props.day).isSame(moment(), "day") ? t("Home.group_today") : moment(props.day).format("ddd D")).toUpperCase());
+const dayLabel = computed(() => (moment(props.day).isSame(moment(), "day") ? t("Home.group_today") : formatDisplayDate(moment(props.day).toDate(), 'ddd D')).toUpperCase());
 const connectTo = computed(() => ({ name: router.hasRoute("IntegrationsHub") ? "IntegrationsHub" : "Setting", params: { cid: companyId.value } }));
 const durationLabel = (item) => fmtEstimate(item.end.diff(item.start, "minutes"));
 </script>

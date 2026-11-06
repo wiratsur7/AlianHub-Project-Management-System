@@ -340,6 +340,7 @@ import { canUseAi } from "@/composable/aiAvailability";
 import { isTitledItem, parseGeneratedList } from "@/utils/parseGeneratedList";
 import taskClass from "@/utils/TaskOperations"
 import { useI18n } from "vue-i18n";
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 const { t } = useI18n();
 
 // UTILS
@@ -509,7 +510,7 @@ const stateDotClass = computed(() => STATE_DOT[scrumState.value] || 'spr__dot--p
 const dayLabel = (value) => {
     if (!value) return '';
     const d = new Date(value);
-    return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }).toUpperCase();
+    return Number.isNaN(d.getTime()) ? '' : formatDisplayDate(d, 'D MMM').toUpperCase();
 };
 
 const sprintWindow = computed(() => {

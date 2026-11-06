@@ -79,7 +79,7 @@
 
                     <div v-if="recentRuns.length" class="xd__runs">
                         <div v-for="run in recentRuns" :key="run._id" class="xd__run">
-                            <strong>{{ $t('Provenance.ext_handed', { agent: run.agentName || $t('Provenance.an_agent'), when: fromNow(run.startedAt) }) }}</strong>
+                            <strong>{{ $t('Provenance.ext_handed', { agent: run.agentName || $t('Provenance.an_agent'), when: relativeTime(run.startedAt) }) }}</strong>
                         </div>
                         <p class="xd__run-note">{{ $t('Provenance.ext_handed_note') }}</p>
                     </div>
@@ -100,7 +100,7 @@
 
 <script setup>
 import { computed, onMounted, ref } from "vue";
-import moment from "moment";
+import { formatRelativeTime } from '@/views/Settings/Language/localePrefs';
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
 import { apiRequest, apiRequestWithoutCompnay } from "@/services";
@@ -137,7 +137,7 @@ const agentCount = computed(() => agents.value.length + (account.value ? 1 : 0))
 const apiBase = computed(() => String(env.API_URI || "").replace(/\/$/, ""));
 const mcpUrl = computed(() => `${apiBase.value}/mcp?companyId=${cid.value || ""}`);
 
-const fromNow = (date) => (date ? moment(date).fromNow() : "");
+const relativeTime = (date) => formatRelativeTime(date);
 
 const connectedBy = computed(() => {
     const byType = {};
@@ -154,7 +154,7 @@ const sources = computed(() => catalog.value.map((item) => {
         glyph: item.icon,
         reads: item.description,
         live,
-        since: conn && conn.connectedAt ? fromNow(conn.connectedAt) : t("Provenance.ext_connected")
+        since: conn && conn.connectedAt ? relativeTime(conn.connectedAt) : t("Provenance.ext_connected")
     };
 }));
 

@@ -78,6 +78,7 @@ import ShellIcon from '@/components/organisms/Shell/ShellIcon.vue';
 import { apiRequest } from '@/services';
 import * as env from '@/config/env';
 import { isOwnerOrAdmin } from '@/utils/roles';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 const props = defineProps({
     navigate: { type: Function, default: (url) => window.location.assign(url) },
@@ -104,7 +105,7 @@ const busy = ref('');
 const completing = ref(false);
 
 const privileged = computed(() => isOwnerOrAdmin(Number(getters['settings/companyUserDetail']?.roleType)));
-const when = (d) => (d ? new Date(d).toLocaleString() : t('GoogleConnection.never'));
+const when = (d) => (d ? formatDisplayDate(d, 'L h:mm A') : t('GoogleConnection.never'));
 const nameOf = (userId) => {
     const person = (getters['users/users'] || []).find((user) => String(user._id) === String(userId));
     return person?.Employee_Name || t('GoogleConnection.member_unknown', { id: String(userId).slice(-6) });

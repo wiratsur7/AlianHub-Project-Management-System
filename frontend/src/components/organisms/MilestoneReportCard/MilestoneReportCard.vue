@@ -159,6 +159,7 @@ import * as env from '@/config/env';
 import { resolveCardRange } from '@/composable/useResourceWorkload';
 import CardSkeleton from '@/components/atom/CardSkeleton/CardSkeleton.vue';
 import { isOwnerOrAdmin } from "@/utils/roles";
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 // Company-wide billing-milestone report for the management dashboard.
 // Self-fetching from POST /api/v1/dashboard/milestone-summary. Owner/Admin
@@ -224,9 +225,7 @@ const formatDue = (ms) => {
     const t = Number(ms) || 0;
     if (t <= 0) return '';
     const d = new Date(t);
-    const opts = { month: 'short', day: 'numeric' };
-    if (d.getFullYear() !== new Date().getFullYear()) opts.year = 'numeric';
-    return d.toLocaleDateString(undefined, opts);
+    return formatDisplayDate(d, d.getFullYear() !== new Date().getFullYear() ? 'D MMM YYYY' : 'D MMM');
 };
 
 // Temporal bucket of a milestone relative to TODAY, driving the timeline pill.

@@ -53,7 +53,7 @@
 <script setup>
 import { computed, defineProps, onMounted, ref } from "vue";
 import { useStore } from "vuex";
-import moment from "moment";
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 import { useAppVersion } from "@/composable/useAppVersion";
 
 defineProps({ proof: { type: Boolean, default: true } });
@@ -65,7 +65,7 @@ const productName = computed(() => brand.value.productName || "AlianHub");
 const initial = computed(() => productName.value.charAt(0).toUpperCase());
 const logo = "/api/v1/getlogo?key=favicon";
 const logoOk = ref(true);
-const today = moment().format("ddd MMM D").toUpperCase();
+const today = formatDisplayDate(new Date(), 'ddd MMM D').toUpperCase();
 
 /* The app shell already provides main; a second one inside it would be a nested landmark. */
 const rootRef = ref(null);

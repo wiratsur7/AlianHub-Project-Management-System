@@ -49,6 +49,7 @@
 <script setup>
 import { computed, defineEmits, defineProps, inject, ref } from "vue";
 import moment from "moment";
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 import ShellIcon from "@/components/organisms/Shell/ShellIcon.vue";
 
 defineOptions({ name: "PlannerPanel" });
@@ -77,7 +78,7 @@ const days = computed(() => {
     const monday = moment(props.day).startOf("isoWeek");
     return Array.from({ length: 5 }, (_, i) => {
         const date = monday.clone().add(i, "days");
-        return { key: date.format("YYYY-MM-DD"), label: date.format("ddd D").toUpperCase(), date, isToday: date.isSame(moment(), "day") };
+        return { key: date.format("YYYY-MM-DD"), label: formatDisplayDate(date.toDate(), 'ddd D').toUpperCase(), date, isToday: date.isSame(moment(), "day") };
     });
 });
 const selectedKey = computed(() => moment(props.day).format("YYYY-MM-DD"));

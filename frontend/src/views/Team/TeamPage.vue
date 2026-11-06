@@ -117,6 +117,7 @@ import { apiRequest } from "@/services";
 import * as env from "@/config/env";
 import ShellIcon from "@/components/organisms/Shell/ShellIcon.vue";
 import AgentIdentity from "@/views/Ai/AgentIdentity.vue";
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 // The Team board (13h). Every column is read from something that already
 // happened — a running timer, an open task, an approved leave request, a live
@@ -151,7 +152,7 @@ const elapsed = (ms) => {
     return `${h}:${m}`;
 };
 
-const clock = (at) => (at ? new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "");
+const clock = (at) => (at ? formatDisplayDate(at, 'HH:mm') : "");
 
 const nowLine = (person) => {
     if (person.status === "away" && person.pto) return t("Parity.pto_until", { date: String(person.pto.to).slice(0, 10) });

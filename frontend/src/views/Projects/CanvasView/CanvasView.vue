@@ -74,6 +74,7 @@ export default { name: 'CanvasView' };
 import { ref, computed, onMounted, inject, watch } from 'vue';
 import { useStore } from 'vuex';
 import { taskListHelper } from '@/views/Projects/helper.js';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 const props = defineProps({
     projectData: { type: Object, default: () => ({}) },
@@ -122,7 +123,7 @@ const stats = computed(() => {
         .filter((t) => { const d = new Date(t.DueDate).getTime(); return d >= now && d <= soon; })
         .sort((a, b) => new Date(a.DueDate) - new Date(b.DueDate))
         .slice(0, 6)
-        .map((t) => ({ id: String(t._id), name: t.TaskName || t.TaskKey || 'Task', due: new Date(t.DueDate).toLocaleDateString() }));
+        .map((t) => ({ id: String(t._id), name: t.TaskName || t.TaskKey || 'Task', due: formatDisplayDate(t.DueDate) }));
     return {
         total,
         donePct: total ? Math.round((done / total) * 100) : 0,
