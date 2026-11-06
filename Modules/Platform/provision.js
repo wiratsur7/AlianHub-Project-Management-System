@@ -7,7 +7,7 @@ const { STATE_IDS, readState, writeState } = require('./platformState');
 const { activationLink } = require('./ownerLinks');
 
 /* The languages the web app ships (frontend/src/utils/localeLoader.js plus English); a test holds the two lists together. */
-const APP_LOCALES = Object.freeze(['en', 'ar', 'ch', 'fr', 'ge', 'gr', 'gu', 'hi', 'it', 'ja', 'ko', 'ptBr', 'ru', 'spa']);
+const APP_LOCALES = Object.freeze(['en', 'ar', 'ch', 'fr', 'ge', 'gr', 'gu', 'hi', 'it', 'ja', 'ko', 'ptBr', 'ru', 'spa', 'th']);
 const PROVISION_ID = /^[A-Za-z0-9_-]{3,100}$/;
 
 const globalDb = (type, data, method) => MongoDbCrudOpration(SCHEMA_TYPE.GOLBAL, { type, data }, method);

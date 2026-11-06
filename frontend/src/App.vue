@@ -170,10 +170,8 @@ watch(() => [getters['settings/rules'], getters['settings/companyUserDetail']?.r
 }, { immediate: true });
 
 watch(() => [currentUser.value?.Time_Format, getters['settings/companyDateFormat']?.dateFormat, localePrefs.dateFormat], ([timeFormat, workspacePattern]) => {
-    if (workspacePattern) {
-        workspaceDateFormat.value = workspacePattern;
-        setWorkspaceDateFormat(workspacePattern);
-    }
+    workspaceDateFormat.value = workspacePattern || workspaceDateFormat.value;
+    setWorkspaceDateFormat(workspaceDateFormat.value);
     followClockPrefs({ timeFormat, dateFormat: effectiveDateFormat() });
 }, { immediate: true });
 

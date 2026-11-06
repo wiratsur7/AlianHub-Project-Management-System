@@ -6,8 +6,8 @@ const FUTURE = 'Future';
 /* The date settings form used to store the words as the person's language showed them, so fields saved before it stored
    Past and Future still carry these. A locale's word stays here when its translation changes. */
 const STORED_WORDS = {
-    [PAST]: ['过去', 'Passé', 'Vergangenheit', 'Παρελθόν', 'ભૂતકાળ', 'भूतकाल', 'Passato', 'Прошлое', 'Pasado'],
-    [FUTURE]: ['未来', 'Futur', 'Zukunft', 'Μέλλον', 'ભાવિ', 'भविष्य', 'Futuro', 'Будущее'],
+    [PAST]: ['过去', 'Passé', 'Vergangenheit', 'Παρελθόν', 'ભૂતકાળ', 'भूतकाल', 'Passato', 'Прошлое', 'Pasado', 'อดีต'],
+    [FUTURE]: ['未来', 'Futur', 'Zukunft', 'Μέλλον', 'ભાવિ', 'भविष्य', 'Futuro', 'Будущее', 'อนาคต'],
 };
 
 const spelling = (word) => word.trim().toLowerCase();

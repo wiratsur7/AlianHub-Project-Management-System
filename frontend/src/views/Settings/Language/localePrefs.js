@@ -7,6 +7,10 @@
 import { reactive, watch } from "vue";
 import moment from "moment";
 import "moment/locale/th";
+import { hourCycleOption } from "@/utils/clockText";
+
+// Loading a moment locale file also makes it the global locale; Thai is only ever applied per call.
+moment.locale("en");
 
 export const LOCALES = [
     { code: "en", label: "English", english: "English", dir: "ltr" },
@@ -171,13 +175,21 @@ export function formatNumber(value, prefs = localePrefs) {
     return toNumerals(`${number < 0 ? "-" : ""}${body}`, prefs.numerals);
 }
 
+function supportedLocaleTag(tag) {
+    try {
+        return Intl.DateTimeFormat.supportedLocalesOf(tag).length ? tag : undefined;
+    } catch (error) {
+        return undefined;
+    }
+}
+
 export function formatDisplayDate(value, pattern, prefs = localePrefs) {
     const dateOnly = typeof value === "string" && /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
     const date = value instanceof Date
         ? value
         : (dateOnly ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3])) : new Date(value));
     if (Number.isNaN(date.getTime())) return "";
-    const locale = localeTagOf(prefs.language);
+    const locale = supportedLocaleTag(localeTagOf(prefs.language));
     const selectedPattern = pattern || (prefs === localePrefs ? effectiveDateFormat() : (prefs.dateFormat || DEFAULTS.dateFormat));
     const year = date.getFullYear() + (prefs.calendar === "buddhist" ? 543 : 0);
     const pad = (value) => String(value).padStart(2, "0");
@@ -228,7 +240,7 @@ export function formatDisplayDate(value, pattern, prefs = localePrefs) {
             LT: { timeStyle: "short" },
             LTS: { timeStyle: "medium" }
         }[key];
-        return macro(dateTimeOptions);
+        return macro(key === "LL" ? dateTimeOptions : { ...dateTimeOptions, ...hourCycleOption() });
     });
     return toNumerals(formatted, prefs.numerals);
 }

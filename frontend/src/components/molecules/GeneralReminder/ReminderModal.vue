@@ -232,10 +232,10 @@ const dateLabel = computed(() => {
     const tomorrow = new Date();
     tomorrow.setDate(today.getDate() + 1);
     const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-    const time = formatDisplayDate(d, 'h:mm A');
+    const time = formatDisplayDate(d, 'h:mm a');
     if (sameDay(d, today)) return `${t('Reminders.today')}, ${time}`;
     if (sameDay(d, tomorrow)) return `${t('Reminders.tomorrow')}, ${time}`;
-    return formatDisplayDate(d, 'D MMM h:mm A');
+    return formatDisplayDate(d, 'D MMM h:mm a');
 });
 
 function setPreset(daysFromToday) {

@@ -162,7 +162,25 @@
     "Workflows.lineage_agent",
     "Secrets.read_header_ph",
     "GoogleConnection.name_google_calendar",
-    "TaskLists.more_lists"
+    "TaskLists.more_lists",
+    "Reports.format_csv",
+    "Reports.format_xlsx",
+    "Reports.format_pdf",
+    "Reports.meta_filter",
+    "TimeTracker.desktop_version",
+    "TimeTracker.desktop_os_windows",
+    "TimeTracker.desktop_os_mac",
+    "TimeTracker.desktop_os_linux",
+    "TimeTracker.desktop_os_with_format",
+    "TimeTracker.desktop_size_gb",
+    "TimeTracker.desktop_size_mb",
+    "Instance.managed_version",
+    "Instance.sec_auth_google",
+    "Instance.sec_auth_github",
+    "Instance.sec_auth_gitlab",
+    "Plan.plans.starter",
+    "Plan.plans.pro",
+    "Plan.plans.business"
   ],
   "reason": "Reviewed intentional English values only: brand and service names, protocol and file-format labels, code/URL/regex examples, keyboard legends, units, symbols, and placeholder-only templates."
 }
