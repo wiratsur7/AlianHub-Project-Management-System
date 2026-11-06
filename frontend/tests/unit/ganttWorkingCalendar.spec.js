@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushPromises, mount } from '@vue/test-utils';
 
 const { gantt, getters, stub } = vi.hoisted(() => ({
@@ -84,6 +84,8 @@ describe('the Gantt Replan line counts in the working week', () => {
 });
 
 describe('the Gantt chart shades the days off', () => {
+    beforeEach(() => { window.localStorage.clear(); });
+
     const cellClass = (date) => gantt.templates.timeline_cell_class({}, date);
 
     it('shades Saturday and Sunday in the day scale by default', async () => {

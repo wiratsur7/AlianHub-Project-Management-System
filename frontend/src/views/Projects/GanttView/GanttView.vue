@@ -9,7 +9,7 @@
 
         <template v-else>
             <div class="gv__bar">
-                <div class="ah-tabs gv__zoom">
+                <div class="ah-tabs gv__zoom" :title="$t('Views.zoom_hint')">
                     <button
                         v-for="z in zoomLevels"
                         :key="z.key"
@@ -44,13 +44,14 @@
                 </button>
             </div>
 
-            <div class="gv__main">
+            <div ref="mainEl" class="gv__main">
                 <div v-if="loadError" class="gv__msg ah-empty">
                     {{ $t('Views.gantt_module_missing') }}
                     <code>cd frontend &amp;&amp; npm install</code>
                 </div>
                 <template v-else>
                     <div ref="ganttEl" class="gv__chart"></div>
+                    <div v-if="dragTip" class="gv__dragtip" role="status" :style="{ left: dragTip.x + 'px', top: dragTip.y + 'px' }">{{ dragTip.text }}</div>
                     <EmptyState
                         v-if="!scheduled.length && !loading"
                         class="gv__empty"
@@ -156,7 +157,9 @@ import { workingDaysFor, countsEveryDay } from '@workingDays';
 import { openTask } from '@/components/organisms/TaskDetailOverlay/useTaskOverlay';
 import { showUndoToast } from '@/composable/useUndoToast';
 import { datesForGanttDrag } from './dragDates';
+import { snapDragDates } from './dragSnap';
 import { growTimelineRange, includeTimelineDates, initialTimelineRange } from './timelineRange';
+import { CANON, clampPpd, bandFor, scalesFor, minColumnWidth, ppdFromScale, wheelFactor, storageKey, readZoom, writeZoom } from './zoomModel';
 import EmptyState from '@/components/atom/EmptyState/EmptyState.vue';
 import { useAddFirstTask } from '@/views/Projects/composables/useAddFirstTask';
 import { useToast } from 'vue-toast-notification';
@@ -182,6 +185,10 @@ const companyId = inject('$companyId', ref(''));
 const clientWidth = inject('$clientWidth', ref(1440));
 
 const ganttEl = ref(null);
+const mainEl = ref(null);
+const dragTip = ref(null);
+const DRAG_TIP_WIDTH = 160;
+const DRAG_TIP_HEIGHT = 28;
 const loadError = ref(false);
 const loading = ref(true);
 const milestones = ref([]);
@@ -221,6 +228,12 @@ let scrollbarPointerDownHandler = null;
 let windowBlurHandler = null;
 let viewportInteractionRoot = null;
 let dateBatchWriteCount = 0;
+let pxPerDay = CANON.Week;
+let pendingZoomFactor = 1;
+let zoomClientX = null;
+let zoomFrame = 0;
+let lastZoomRenderAt = 0;
+let persistTimer = null;
 const pendingDateWrites = new Set();
 
 const isMobile = computed(() => Number(clientWidth.value || 0) > 0 && Number(clientWidth.value) < 768);
@@ -464,23 +477,35 @@ function visibleTimelineDates() {
     return validDate(start) && validDate(end) && end > start ? { start, end } : null;
 }
 
-function captureViewportAnchor() {
+function captureViewportAnchor(clientX) {
     if (!gantt || typeof gantt.getScrollState !== 'function') return null;
     const scroll = gantt.getScrollState();
     if (pendingInitialViewport?.date) {
-        return { date: new Date(pendingInitialViewport.date), y: pendingInitialViewport.y };
+        return { date: new Date(pendingInitialViewport.date), y: pendingInitialViewport.y, offsetX: 0 };
     }
+    const timeline = gantt.$task;
+    const rect = Number.isFinite(clientX) && timeline && typeof timeline.getBoundingClientRect === 'function'
+        ? timeline.getBoundingClientRect()
+        : null;
+    let offsetX = rect ? clientX - rect.left : 0;
+    const scrollX = Number(scroll?.x) || 0;
     let date = null;
-    try { date = gantt.dateFromPos(Number(scroll?.x) || 0); } catch (e) { /* chart is not ready */ }
-    return { date: validDate(date) ? date : null, y: Number(scroll?.y) || 0 };
+    try { date = gantt.dateFromPos(scrollX + offsetX); } catch (e) { /* chart is not ready */ }
+    if (!validDate(date) && offsetX !== 0) {
+        offsetX = 0;
+        try { date = gantt.dateFromPos(scrollX); } catch (e) { /* chart is not ready */ }
+    }
+    return { date: validDate(date) ? date : null, y: Number(scroll?.y) || 0, offsetX };
 }
 
-function restoreViewport(anchor) {
+function restoreViewport(anchor, { sync = false } = {}) {
     if (!anchor || !gantt || typeof gantt.scrollTo !== 'function') return;
     const version = ++viewportRestoreVersion;
     const restore = () => {
         if (!gantt || !ready || version !== viewportRestoreVersion) return;
-        const x = anchor.date && typeof gantt.posFromDate === 'function' ? gantt.posFromDate(anchor.date) : undefined;
+        const x = anchor.date && typeof gantt.posFromDate === 'function'
+            ? Math.max(0, gantt.posFromDate(anchor.date) - (anchor.offsetX || 0))
+            : undefined;
         gantt.scrollTo(x, anchor.y);
         if (pendingInitialViewport?.date && anchor.date?.getTime() === pendingInitialViewport.date.getTime()) {
             pendingInitialViewport = null;
@@ -490,7 +515,7 @@ function restoreViewport(anchor) {
     // Restore synchronously so the active gesture keeps its date and row under
     // the pointer; delayed restoration would either be dropped or snap back to
     // an anchor from before the user finished panning.
-    if (timelinePanning || taskDragInProgress) {
+    if (sync || timelinePanning || taskDragInProgress) {
         restore();
         return;
     }
@@ -586,6 +611,7 @@ function attachTimelinePanGuard() {
         flushDeferredRender();
     };
     windowBlurHandler = () => {
+        dragTip.value = null;
         const hadGesture = timelinePanning || taskDragInProgress;
         timelinePanning = false;
         if (taskDragInProgress) {
@@ -598,9 +624,17 @@ function attachTimelinePanGuard() {
             flushDeferredRender();
         }
     };
-    viewportWheelHandler = () => {
+    viewportWheelHandler = (e) => {
         pendingInitialViewport = null;
         invalidatePendingRestore();
+        if (!(e.ctrlKey || e.metaKey)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (!ready || taskDragInProgress || timelinePanning || shiftPreview.value) return;
+        pendingZoomFactor *= wheelFactor(e);
+        zoomClientX = e.clientX;
+        if (zoomFrame) return;
+        zoomFrame = requestAnimationFrame(runZoomFrame);
     };
     scrollbarPointerDownHandler = (event) => {
         if (event.target?.closest?.('.gantt_hor_scroll, .gantt_ver_scroll')) {
@@ -609,7 +643,7 @@ function attachTimelinePanGuard() {
         }
     };
     timeline.addEventListener('mousedown', panPointerDownHandler, true);
-    viewportInteractionRoot.addEventListener('wheel', viewportWheelHandler, true);
+    viewportInteractionRoot.addEventListener('wheel', viewportWheelHandler, { capture: true, passive: false });
     viewportInteractionRoot.addEventListener('mousedown', scrollbarPointerDownHandler, true);
     document.addEventListener('mouseup', panPointerUpHandler, true);
     document.addEventListener('pointerup', panPointerUpHandler, true);
@@ -617,6 +651,8 @@ function attachTimelinePanGuard() {
 }
 
 function detachTimelinePanGuard() {
+    cancelZoomFrame();
+    flushPersist();
     if (panPointerDownHandler) gantt?.$task?.removeEventListener('mousedown', panPointerDownHandler, true);
     if (viewportWheelHandler) viewportInteractionRoot?.removeEventListener('wheel', viewportWheelHandler, true);
     if (scrollbarPointerDownHandler) viewportInteractionRoot?.removeEventListener('mousedown', scrollbarPointerDownHandler, true);
@@ -740,7 +776,44 @@ function shiftPlanSignature(plan) {
     });
 }
 
+function snapDraggedTask(id, mode, task) {
+    if (!taskDragInProgress || !activeTaskDragSnapshot || activeTaskDragSnapshot.id !== String(id) || !task) return;
+    const snapped = snapDragDates({
+        mode,
+        dragModes: gantt.config.drag_mode || {},
+        original: activeTaskDragSnapshot.original,
+        dragged: { start_date: task.start_date, end_date: task.end_date },
+    });
+    if (!validDate(snapped?.start_date) || !validDate(snapped?.end_date)) return;
+    task.start_date = snapped.start_date;
+    task.end_date = snapped.end_date;
+}
+
+function updateDragTip(id, mode, task, event) {
+    const clientX = event?.clientX;
+    const clientY = event?.clientY;
+    if (!taskDragInProgress || !activeTaskDragSnapshot || activeTaskDragSnapshot.id !== String(id) || !task
+        || !Number.isFinite(clientX) || !Number.isFinite(clientY) || !mainEl.value) return;
+    const snapshot = activeTaskDragSnapshot;
+    const to = datesForGanttDrag({
+        mode,
+        dragModes: gantt.config.drag_mode || {},
+        original: snapshot.original,
+        dragged: task,
+        stored: snapshot.stored,
+    });
+    const range = to || snapshot.stored;
+    const text = t('Views.drag_range', { start: shortDate(range.startDate), end: shortDate(range.DueDate) });
+    const rect = mainEl.value.getBoundingClientRect();
+    dragTip.value = {
+        x: Math.min(Math.max(0, rect.width - DRAG_TIP_WIDTH), Math.max(0, clientX - rect.left + 12)),
+        y: Math.min(Math.max(0, rect.height - DRAG_TIP_HEIGHT), Math.max(0, clientY - rect.top - 30)),
+        text,
+    };
+}
+
 function onTaskDragged(id, mode) {
+    dragTip.value = null;
     const snapshot = activeTaskDragSnapshot;
     activeTaskDragSnapshot = null;
     taskDragInProgress = false;
@@ -762,9 +835,6 @@ function onTaskDragged(id, mode) {
         stored: snapshot.stored,
     });
     if (!to) {
-        const dragModes = gantt.config.drag_mode || {};
-        const supportedMode = mode === dragModes.move || mode === dragModes.resize;
-        if (supportedMode && zoom.value !== 'Day') toast.info(t('Views.drag_snapped_back'));
         renderData();
         flushDeferredRender();
         return;
@@ -920,32 +990,75 @@ function schedule(task) {
 // dhtmlx lays its rows out in pixels: the List's row height for the look, 36px where a look names none.
 const lookRowHeight = () => readLookLength('--row-h', 36);
 
-function applyScales(level) {
+function applyScales(ppd, band) {
     if (!gantt) return;
     gantt.config.scale_height = lookRowHeight() - 2;
-    if (level === 'Day') {
-        gantt.config.scales = [
-            { unit: 'day', step: 1, format: '%d %M' },
-            { unit: 'hour', step: 6, format: '%H:%i' },
-        ];
-    } else if (level === 'Month') {
-        gantt.config.scales = [
-            { unit: 'month', step: 1, format: '%F %Y' },
-            { unit: 'week', step: 1, format: 'W%W' },
-        ];
-    } else {
-        gantt.config.scales = [{ unit: 'week', step: 1, format: '%M %d' }];
-    }
+    const { scales, unit, step } = scalesFor(ppd, band);
+    gantt.config.scales = scales;
+    gantt.config.min_column_width = minColumnWidth(ppd, unit, step);
 }
-function setZoom(level) {
-    const anchor = captureViewportAnchor();
+
+function applyPpd(next, { clientX, forceBand } = {}) {
+    const ppd = clampPpd(next);
+    if (ppd === null) return;
+    const band = forceBand || bandFor(ppd, zoom.value);
+    const anchor = ready && gantt ? captureViewportAnchor(clientX) : null;
     pendingInitialViewport = null;
-    zoom.value = level;
-    applyScales(level);
-    if (ready && gantt) {
-        gantt.render();
-        restoreViewport(anchor);
+    pxPerDay = ppd;
+    zoom.value = band;
+    applyScales(ppd, band);
+    if (!ready || !gantt) return;
+    gantt.render();
+    restoreViewport(anchor, { sync: true });
+    const effective = typeof gantt.getScale === 'function' ? ppdFromScale(gantt.getScale()) : null;
+    if (effective) pxPerDay = effective;
+    scheduleViewportRangeCheck();
+    schedulePersist();
+}
+
+function setZoom(level) {
+    applyPpd(CANON[level], { forceBand: level });
+}
+
+const zoomStorageKey = () => {
+    const pid = props.projectData?._id;
+    return storageKey(pid ? String(pid) : null);
+};
+
+function schedulePersist() {
+    if (!zoomStorageKey()) return;
+    clearTimeout(persistTimer);
+    persistTimer = setTimeout(flushPersist, 250);
+}
+
+function cancelZoomFrame() {
+    if (zoomFrame && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(zoomFrame);
+    zoomFrame = 0;
+    pendingZoomFactor = 1;
+    zoomClientX = null;
+}
+
+function flushPersist() {
+    if (persistTimer === null) return;
+    clearTimeout(persistTimer);
+    persistTimer = null;
+    const key = zoomStorageKey();
+    if (!key) return;
+    try { writeZoom(window.localStorage, key, pxPerDay); } catch (e) { /* storage blocked */ }
+}
+
+function runZoomFrame() {
+    zoomFrame = 0;
+    if (!ready || !gantt) { pendingZoomFactor = 1; return; }
+    const now = performance.now();
+    if (now - lastZoomRenderAt < 33) {
+        zoomFrame = requestAnimationFrame(runZoomFrame);
+        return;
     }
+    const factor = pendingZoomFactor;
+    pendingZoomFactor = 1;
+    lastZoomRenderAt = now;
+    applyPpd(pxPerDay * factor, { clientX: zoomClientX });
 }
 function toggleCritical() {
     showCritical.value = !showCritical.value;
@@ -1045,6 +1158,9 @@ onMounted(async () => {
         gantt.config.drag_links = !readOnly.value;
         gantt.config.drag_progress = false;
         gantt.config.fit_tasks = false;
+        // dhtmlx would otherwise round drops to the week unit; snapDragDates owns whole-day snapping.
+        gantt.config.round_dnd_dates = false;
+        gantt.config.time_step = 1;
         delete gantt.config.start_date;
         delete gantt.config.end_date;
         // The plugin writes its defaults when activated, so configure it afterwards.
@@ -1073,7 +1189,11 @@ onMounted(async () => {
         };
         gantt.templates.timeline_cell_class = (task, date) => dayOffClass(date);
         gantt.templates.scale_cell_class = (date) => dayOffClass(date);
-        applyScales(zoom.value);
+        let saved = null;
+        try { saved = readZoom(window.localStorage, zoomStorageKey()); } catch (e) { /* storage blocked */ }
+        pxPerDay = saved ?? CANON.Week;
+        zoom.value = bandFor(pxPerDay);
+        applyScales(pxPerDay, zoom.value);
 
         gantt.init(ganttEl.value);
         attachTimelinePanGuard();
@@ -1099,7 +1219,9 @@ onMounted(async () => {
                 && !pendingDateWrites.has(String(id)) && canEditTaskDates(task);
             taskDragInProgress = allowed;
             activeTaskDragSnapshot = null;
+            dragTip.value = null;
             if (allowed) {
+                cancelZoomFrame();
                 pendingInitialViewport = null;
                 const chartTask = gantt.getTask(id) || {};
                 const startDate = chartTask.start_date || task.startDate;
@@ -1122,8 +1244,15 @@ onMounted(async () => {
             }
             return allowed;
         }));
-        eventIds.push(gantt.attachEvent('onTaskDrag', (id, mode, task) => {
+        eventIds.push(gantt.attachEvent('onTaskDrag', (id, mode, task, original, e) => {
+            snapDraggedTask(id, mode, task);
+            updateDragTip(id, mode, task, e);
             if (taskDragInProgress) ensureTimelineForDraggedTask(task || gantt.getTask(id));
+        }));
+        // dhtmlx passes a copy of the pre-drag task as the 3rd argument, so the live task must be snapped instead.
+        eventIds.push(gantt.attachEvent('onBeforeTaskChanged', (id, mode) => {
+            snapDraggedTask(id, mode, gantt.getTask(id));
+            return true;
         }));
         eventIds.push(gantt.attachEvent('onAfterTaskDrag', (id, mode) => onTaskDragged(id, mode)));
         eventIds.push(gantt.attachEvent('onGanttScroll', () => scheduleViewportRangeCheck()));
@@ -1215,10 +1344,13 @@ onBeforeUnmount(() => {
     pendingInitialViewport = null;
     taskDragInProgress = false;
     activeTaskDragSnapshot = null;
+    dragTip.value = null;
     viewportRestoreVersion += 1;
     renderDeferred = false;
     pendingDateWrites.clear();
     dateBatchWriteCount = 0;
+    pxPerDay = CANON.Week;
+    lastZoomRenderAt = 0;
 });
 </script>
 
