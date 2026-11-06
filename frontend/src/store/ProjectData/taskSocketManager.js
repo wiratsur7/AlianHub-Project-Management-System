@@ -45,10 +45,12 @@ function dedupeIdOf(eventName, payload) {
     }
 }
 
-function createManager(socket) {
+function createManager(socket, store) {
     const rooms = new Map();
     const owners = new Map();
     const handlers = new Map();
+    const anyHandlers = new Map();
+    const listeners = [];
     const seenEvents = new Map();
     let defaultOnEvent = null;
 
@@ -72,6 +74,13 @@ function createManager(socket) {
     }
 
     function routeEvent(eventName, payload) {
+        anyHandlers.forEach((onAny) => {
+            try {
+                onAny(eventName, payload);
+            } catch (error) {
+                console.error("ERROR in task socket subscription: ", error);
+            }
+        });
         const membershipIds = eventMembershipIds(payload);
         const dedupeId = dedupeIdOf(eventName, payload);
         for (const membershipSprintId of membershipIds) {
@@ -97,7 +106,11 @@ function createManager(socket) {
         }
     }
 
-    EVENT_NAMES.forEach((eventName) => socket.on(eventName, (payload) => routeEvent(eventName, payload)));
+    EVENT_NAMES.forEach((eventName) => {
+        const listener = (payload) => routeEvent(eventName, payload);
+        listeners.push([eventName, listener]);
+        socket.on(eventName, listener);
+    });
 
     function effectiveUserId(room) {
         const userIds = [...room.owners].map((ownerKey) => room.userIds.get(ownerKey) || "");
@@ -220,6 +233,15 @@ function createManager(socket) {
         });
         owners.delete(ownerKey);
         handlers.delete(ownerKey);
+        anyHandlers.delete(ownerKey);
+    }
+
+    function setOnAnyEvent(onAnyEvent, ownerKey) {
+        if (typeof onAnyEvent === "function" && ownerKey !== undefined && ownerKey !== null) anyHandlers.set(ownerKey, onAnyEvent);
+    }
+
+    function dispose() {
+        listeners.forEach(([eventName, listener]) => socket.off?.(eventName, listener));
     }
 
     function setOnEvent(onEvent, ownerKey) {
@@ -228,20 +250,25 @@ function createManager(socket) {
         else handlers.set(ownerKey, onEvent);
     }
 
-    return { joinTaskListRooms, leaveTaskListRooms, setOnEvent, rooms };
+    return { joinTaskListRooms, leaveTaskListRooms, setOnEvent, setOnAnyEvent, dispose, store, rooms };
 }
 
 /** Install exactly one stable listener set on this socket and return its shared room manager. */
-export function ensureTaskSocketManager(socket, { onEvent, ownerKey } = {}) {
+export function ensureTaskSocketManager(socket, { onEvent, onAnyEvent, ownerKey, store } = {}) {
     if (!socket || typeof socket.on !== "function" || typeof socket.emit !== "function") return null;
     let manager = managers.get(socket);
+    if (manager && store !== undefined && manager.store !== undefined && manager.store !== store) {
+        manager.dispose();
+        manager = null;
+    }
     if (!manager) {
-        manager = createManager(socket);
+        manager = createManager(socket, store);
         managers.set(socket, manager);
     }
     if (typeof onEvent === "function") {
         manager.setOnEvent(onEvent, ownerKey);
     }
+    manager.setOnAnyEvent(onAnyEvent, ownerKey);
     return manager;
 }
 

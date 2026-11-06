@@ -86,7 +86,7 @@ function taskSocketOperation(eventName) {
     return 'modified';
 }
 
-function taskSocketHandler({commit, dispatch, pid, sprintIds, showAllTasks, userId, membershipScoped = false}) {
+function taskSocketHandler({commit, pid, sprintIds, showAllTasks, userId, membershipScoped = false}) {
     const allowedLists = new Set(sprintIds.map(String));
     return ({membershipSprintId, eventName, payload: eventPayload}) => {
         const sprintId = String(membershipSprintId || '');
@@ -103,7 +103,16 @@ function taskSocketHandler({commit, dispatch, pid, sprintIds, showAllTasks, user
         commit('mutateMongoUpdatedTask', {snap: {}, op, pid, sprintId, data: {...data}});
         if (op !== 'removed') commit('mutateTypesenseTasks', {snap: {}, op, pid, sprintId, data: {...data}});
         commit('mutateTypesenseTableTasks', {snap: {}, op, pid, sprintId, data: {...data}});
-        queueSprintCounts(dispatch, pid, op, data, updatedFields);
+    };
+}
+
+// A move leaves a list this tab holds no room for, so the counters hear every task event of the project.
+function sprintCountsListener(dispatch, pid) {
+    return (eventName, payload) => {
+        const data = taskSocketRow(eventName, payload);
+        if (data?.ProjectID && String(data.ProjectID) !== String(pid)) return;
+        const updatedFields = payload?.updatedFields || (eventName === 'taskInsert' ? data : {});
+        queueSprintCounts(dispatch, pid, taskSocketOperation(eventName), data, updatedFields);
     };
 }
 
@@ -142,7 +151,7 @@ export const getTasksFromMongoDB = ({state, commit, rootState, dispatch}, payloa
         userId,
         membershipScoped: payload.membershipScoped === true,
     });
-    ensureTaskSocketManager(socket, {onEvent, ownerKey});
+    ensureTaskSocketManager(socket, {onEvent, ownerKey, onAnyEvent: sprintCountsListener(dispatch, pid), store: commit});
     joinTaskListRooms(socket, sprintIds.map((id) => ({
         projectId: pid,
         sprintId: id,
@@ -360,6 +369,10 @@ export const getBoardGroupPages = async ({state, commit}, payload = {}) => {
             return true;
         });
 
+        readyItems.forEach((item) => commit('setGetPaginatedTasksPayload', {
+            data: {pid, sprintId, item, indexName: item.indexName, fetchNew, showAllTasks, userId},
+            op: 'add',
+        }));
         for (const items of boardGroupPageBatches(readyItems)) {
             jobs.push({sprintId, items});
         }
