@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { flushPromises, mount } from '@vue/test-utils';
+import { nextTick } from 'vue';
+import { config, flushPromises, mount } from '@vue/test-utils';
+import en from '@/locales/en.js';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 const { gantt, handlers, getters, updateDates, access, pluginOrder, scroll, renderBehavior } = vi.hoisted(() => {
     const handlers = {};
@@ -102,9 +105,57 @@ const open = async ({ tasks, canEdit = true, delayShowDate = false } = {}) => {
     return wrapper;
 };
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const ZOOM_KEY = `gantt.zoom.v1.${PROJECT}`;
+const offsetDays = (date, days) => new Date(date.getTime() + days * DAY_MS);
+const wheel = (deltaY, init = {}) => new WheelEvent('wheel', { deltaY, cancelable: true, bubbles: true, ...init });
+const ctrlWheel = (deltaY, init = {}) => wheel(deltaY, { ctrlKey: true, ...init });
+const clock = { now: 1000 };
+let queued = new Map();
+let frameId = 1;
+let cancelFrame = null;
+let perfSpy = null;
+
+const i18n = config.global.plugins.find((plugin) => plugin?.global?.mergeLocaleMessage);
+i18n.global.mergeLocaleMessage('en', {
+    Views: {
+        zoom_days: en.Views.zoom_days,
+        zoom_weeks: en.Views.zoom_weeks,
+        zoom_months: en.Views.zoom_months,
+        drag_range: en.Views.drag_range,
+    },
+});
+
+const queueFrames = () => {
+    queued = new Map();
+    frameId = 1;
+    vi.stubGlobal('requestAnimationFrame', (callback) => {
+        const id = frameId;
+        frameId += 1;
+        queued.set(id, callback);
+        return id;
+    });
+    cancelFrame = vi.fn((id) => { queued.delete(id); });
+    vi.stubGlobal('cancelAnimationFrame', cancelFrame);
+};
+const runNextFrame = () => {
+    const [id, callback] = queued.entries().next().value;
+    queued.delete(id);
+    callback();
+};
+const settle = () => { while (queued.size) runNextFrame(); };
+const openSettled = async (options) => {
+    const wrapper = await open(options);
+    settle();
+    return wrapper;
+};
+const width = () => gantt.config.min_column_width;
+const activeTab = (wrapper) => wrapper.get('.gv__zoom .ah-tab.is-on').text();
+
 beforeEach(() => {
     updateDates.mockReset();
     updateDates.mockResolvedValue({});
+    localStorage.clear();
     vi.stubGlobal('requestAnimationFrame', (callback) => { callback(); return 1; });
 });
 
@@ -311,5 +362,268 @@ describe('Gantt timeline integration', () => {
         expect(updateDates).not.toHaveBeenCalled();
 
         wrapper.unmount();
+    });
+
+    describe('ctrl+wheel zoom, persistence and drag feedback', () => {
+        beforeEach(() => {
+            queueFrames();
+            clock.now = 1000;
+            perfSpy = vi.spyOn(performance, 'now').mockImplementation(() => clock.now);
+        });
+
+        afterEach(() => {
+            perfSpy.mockRestore();
+            vi.useRealTimers();
+        });
+
+        it('zooms once per animation frame on ctrl+wheel over the timeline and ignores a plain wheel', async () => {
+            const wrapper = await openSettled();
+            const root = gantt.$root;
+            expect(width()).toBe(70);
+            gantt.render.mockClear();
+
+            const plain = wheel(-100);
+            root.dispatchEvent(plain);
+            expect(plain.defaultPrevented).toBe(false);
+            expect(queued.size).toBe(0);
+            expect(gantt.render).not.toHaveBeenCalled();
+            expect(width()).toBe(70);
+
+            const zoom = ctrlWheel(-100, { clientX: 0 });
+            root.dispatchEvent(zoom);
+            expect(zoom.defaultPrevented).toBe(true);
+            expect(gantt.render).not.toHaveBeenCalled();
+            runNextFrame();
+            expect(gantt.render).toHaveBeenCalledTimes(1);
+            expect(width()).toBe(82);
+            wrapper.unmount();
+        });
+
+        it('coalesces ten ctrl+wheel events in one frame into a single render and defers a frame inside 33ms', async () => {
+            const wrapper = await openSettled();
+            const root = gantt.$root;
+            gantt.render.mockClear();
+
+            for (let i = 0; i < 10; i += 1) root.dispatchEvent(ctrlWheel(-5));
+            expect(queued.size).toBe(1);
+            runNextFrame();
+            expect(gantt.render).toHaveBeenCalledTimes(1);
+            expect(width()).toBe(115);
+
+            settle();
+            gantt.render.mockClear();
+            clock.now = 1010;
+            root.dispatchEvent(ctrlWheel(-5));
+            runNextFrame();
+            expect(gantt.render).not.toHaveBeenCalled();
+            expect(queued.size).toBe(1);
+            expect(width()).toBe(115);
+
+            clock.now = 1040;
+            runNextFrame();
+            expect(gantt.render).toHaveBeenCalledTimes(1);
+            expect(width()).toBe(121);
+            wrapper.unmount();
+        });
+
+        it('leaves zoom untouched while a task drag or a timeline pan is in progress', async () => {
+            const dragging = await openSettled();
+            gantt.dragged['task-1'] = { start_date: day(4, 9), end_date: day(6, 17) };
+            expect(handlers.onBeforeTaskDrag('task-1')).toBe(true);
+            gantt.render.mockClear();
+
+            gantt.$root.dispatchEvent(ctrlWheel(-100));
+            expect(queued.size).toBe(0);
+            expect(gantt.render).not.toHaveBeenCalled();
+            expect(width()).toBe(70);
+            dragging.unmount();
+
+            const panning = await openSettled();
+            gantt.$root.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }));
+            gantt.render.mockClear();
+
+            gantt.$root.dispatchEvent(ctrlWheel(-100));
+            expect(queued.size).toBe(0);
+            expect(gantt.render).not.toHaveBeenCalled();
+            expect(width()).toBe(70);
+            document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, button: 0 }));
+            panning.unmount();
+        });
+
+        it('keeps the date under the cursor at the same pixel while zooming', async () => {
+            const wrapper = await openSettled();
+            const root = gantt.$root;
+            const rectLeft = 40;
+            const clientX = 140;
+            const offsetX = clientX - rectLeft;
+            vi.spyOn(root, 'getBoundingClientRect').mockReturnValue({ left: rectLeft, top: 0, width: 800, height: 400 });
+            scroll.x = 300;
+            const dateSpy = vi.spyOn(gantt, 'dateFromPos');
+            const scrollSpy = vi.spyOn(gantt, 'scrollTo');
+
+            root.dispatchEvent(ctrlWheel(-100, { clientX }));
+            runNextFrame();
+
+            const index = dateSpy.mock.calls.findIndex(([position]) => position === 300 + offsetX);
+            expect(index).toBeGreaterThanOrEqual(0);
+            const anchorDate = dateSpy.mock.results[index].value;
+            expect(scrollSpy.mock.calls.at(-1)[0]).toBe(gantt.posFromDate(anchorDate) - offsetX);
+            wrapper.unmount();
+        });
+
+        it('saves the zoom 250ms after the last change', async () => {
+            const wrapper = await openSettled();
+            vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+            gantt.$root.dispatchEvent(ctrlWheel(-100));
+            runNextFrame();
+
+            expect(localStorage.getItem(ZOOM_KEY)).toBeNull();
+            vi.advanceTimersByTime(249);
+            expect(localStorage.getItem(ZOOM_KEY)).toBeNull();
+            vi.advanceTimersByTime(1);
+            expect(Number(localStorage.getItem(ZOOM_KEY))).toBeCloseTo(10 * Math.exp(0.16), 6);
+            wrapper.unmount();
+        });
+
+        it('saves a zoom that is still pending when the timeline unmounts', async () => {
+            const wrapper = await openSettled();
+            vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+            gantt.$root.dispatchEvent(ctrlWheel(-100));
+            runNextFrame();
+            expect(localStorage.getItem(ZOOM_KEY)).toBeNull();
+
+            wrapper.unmount();
+            expect(Number(localStorage.getItem(ZOOM_KEY))).toBeCloseTo(10 * Math.exp(0.16), 6);
+        });
+
+        it('restores the saved band on the next mount and falls back to Week for unreadable values', async () => {
+            localStorage.setItem(ZOOM_KEY, '30');
+            let wrapper = await openSettled();
+            expect(activeTab(wrapper)).toBe('Days');
+            wrapper.unmount();
+
+            localStorage.setItem(ZOOM_KEY, '2');
+            wrapper = await openSettled();
+            expect(activeTab(wrapper)).toBe('Months');
+            wrapper.unmount();
+
+            for (const unreadable of ['abc', 'NaN', '']) {
+                localStorage.setItem(ZOOM_KEY, unreadable);
+                wrapper = await openSettled();
+                expect(activeTab(wrapper)).toBe('Weeks');
+                expect(width()).toBe(70);
+                wrapper.unmount();
+            }
+        });
+
+        it('switches the zoom band from the Day, Week and Month tabs and marks the active tab', async () => {
+            const wrapper = await openSettled();
+            const tab = (label) => wrapper.findAll('.gv__zoom .ah-tab').find((button) => button.text() === label);
+            expect(activeTab(wrapper)).toBe('Weeks');
+
+            await tab('Days').trigger('click');
+            expect(activeTab(wrapper)).toBe('Days');
+            expect(gantt.config.scales.at(-1).unit).toBe('hour');
+
+            await tab('Months').trigger('click');
+            expect(activeTab(wrapper)).toBe('Months');
+            expect(gantt.config.scales.at(-1).unit).toBe('week');
+
+            await tab('Weeks').trigger('click');
+            expect(activeTab(wrapper)).toBe('Weeks');
+            expect(width()).toBe(70);
+            wrapper.unmount();
+        });
+
+        it('snaps a moving bar to whole days in onTaskDrag and onBeforeTaskChanged', async () => {
+            const wrapper = await openSettled();
+            gantt.dragged['task-1'] = { start_date: day(4, 9), end_date: day(6, 17) };
+            expect(handlers.onBeforeTaskDrag('task-1')).toBe(true);
+            const original = { start_date: day(4, 9), end_date: day(6, 17) };
+
+            const forward = { start_date: offsetDays(day(4, 9), 0.6), end_date: offsetDays(day(6, 17), 0.6) };
+            handlers.onTaskDrag('task-1', 'move', forward, original, undefined);
+            expect(forward.start_date).toEqual(day(5, 9));
+            expect(forward.end_date).toEqual(day(7, 17));
+
+            const short = { start_date: offsetDays(day(4, 9), 0.4), end_date: offsetDays(day(6, 17), 0.4) };
+            handlers.onTaskDrag('task-1', 'move', short, original, undefined);
+            expect(short.start_date).toEqual(day(4, 9));
+            expect(short.end_date).toEqual(day(6, 17));
+
+            gantt.dragged['task-1'] = { start_date: offsetDays(day(4, 9), 0.6), end_date: offsetDays(day(6, 17), 0.6) };
+            expect(handlers.onBeforeTaskChanged('task-1', 'move')).toBe(true);
+            expect(gantt.dragged['task-1'].start_date).toEqual(day(5, 9));
+            expect(gantt.dragged['task-1'].end_date).toEqual(day(7, 17));
+            wrapper.unmount();
+        });
+
+        it('shows the drag range beside the pointer and clears it on drop, blur and unmount', async () => {
+            const showDragTip = () => {
+                gantt.dragged['task-1'] = { start_date: day(4, 9), end_date: day(6, 17) };
+                handlers.onBeforeTaskDrag('task-1');
+                handlers.onTaskDrag(
+                    'task-1',
+                    'move',
+                    { start_date: offsetDays(day(4, 9), 1), end_date: offsetDays(day(6, 17), 1) },
+                    { start_date: day(4, 9), end_date: day(6, 17) },
+                    { clientX: 300, clientY: 200 },
+                );
+            };
+
+            const wrapper = await openSettled();
+            vi.spyOn(wrapper.get('.gv__main').element, 'getBoundingClientRect').mockReturnValue({
+                left: 100, top: 100, width: 800, height: 400,
+            });
+
+            showDragTip();
+            await nextTick();
+            const expectedText = i18n.global.t('Views.drag_range', {
+                start: formatDisplayDate(day(5, 9), 'MMM D'),
+                end: formatDisplayDate(day(7, 17), 'MMM D'),
+            });
+            expect(expectedText).toContain('→');
+            const tip = wrapper.get('.gv__dragtip');
+            expect(tip.text()).toBe(expectedText);
+            expect(tip.attributes('style')).toContain('left: 212px');
+            expect(tip.attributes('style')).toContain('top: 70px');
+
+            handlers.onAfterTaskDrag('task-1', 'move');
+            await nextTick();
+            expect(wrapper.find('.gv__dragtip').exists()).toBe(false);
+
+            showDragTip();
+            await nextTick();
+            expect(wrapper.find('.gv__dragtip').exists()).toBe(true);
+            window.dispatchEvent(new Event('blur'));
+            await nextTick();
+            expect(wrapper.find('.gv__dragtip').exists()).toBe(false);
+
+            showDragTip();
+            const setup = wrapper.vm.$.setupState;
+            expect(setup.dragTip).not.toBeNull();
+            wrapper.unmount();
+            expect(setup.dragTip).toBeNull();
+        });
+
+        it('ignores ctrl+wheel on the old timeline root after unmount and cancels its pending zoom frame', async () => {
+            const wrapper = await openSettled();
+            const root = gantt.$root;
+            const before = width();
+            gantt.render.mockClear();
+
+            root.dispatchEvent(ctrlWheel(-100));
+            expect(queued.size).toBe(1);
+            wrapper.unmount();
+            expect(cancelFrame).toHaveBeenCalled();
+            expect(queued.size).toBe(0);
+
+            const late = ctrlWheel(-100);
+            root.dispatchEvent(late);
+            expect(late.defaultPrevented).toBe(false);
+            settle();
+            expect(gantt.render).not.toHaveBeenCalled();
+            expect(width()).toBe(before);
+        });
     });
 });

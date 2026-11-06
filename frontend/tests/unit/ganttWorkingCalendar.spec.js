@@ -3,10 +3,10 @@ import { flushPromises, mount } from '@vue/test-utils';
 
 const { gantt, getters, stub } = vi.hoisted(() => ({
     gantt: {
-        config: {},
+        config: { min_column_width: 40 },
         templates: {},
         renders: 0,
-        init: () => {},
+        init() { this.$task = document.createElement('div'); },
         render() { this.renders += 1; },
         parse: () => {},
         clearAll: () => {},
@@ -14,6 +14,19 @@ const { gantt, getters, stub } = vi.hoisted(() => ({
         deleteMarker: () => {},
         detachEvent: () => {},
         attachEvent: (name) => name,
+        getScale: () => ({ unit: 'day', step: 1, col_width: 40 }),
+        getScrollState: () => ({ x: 0, y: 0, inner_width: 140, inner_height: 0 }),
+        dateFromPos(position) {
+            const date = new Date(this.config.start_date || new Date(2026, 8, 1));
+            date.setDate(date.getDate() + Math.floor(position / 10));
+            return date;
+        },
+        posFromDate(value) {
+            const start = this.config.start_date || new Date(2026, 8, 1);
+            const day = (date) => Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+            return ((day(value) - day(start)) / 86400000) * 10;
+        },
+        scrollTo: () => {},
     },
     getters: {},
     stub: (name) => ({ default: { name, render: () => null } }),
@@ -66,6 +79,8 @@ const clickButton = async (wrapper, label) => {
     await flushPromises();
 };
 
+beforeEach(() => { window.localStorage.clear(); });
+
 describe('the Gantt Replan line counts in the working week', () => {
     it('says working days for a company that never chose a week', async () => {
         const wrapper = await open();
@@ -84,8 +99,6 @@ describe('the Gantt Replan line counts in the working week', () => {
 });
 
 describe('the Gantt chart shades the days off', () => {
-    beforeEach(() => { window.localStorage.clear(); });
-
     const cellClass = (date) => gantt.templates.timeline_cell_class({}, date);
 
     it('shades Saturday and Sunday in the day scale by default', async () => {
