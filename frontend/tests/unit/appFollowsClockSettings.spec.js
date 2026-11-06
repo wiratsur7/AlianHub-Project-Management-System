@@ -145,6 +145,6 @@ describe('the screens that show a time of day', () => {
     it.each(SCREENS.filter((file) => file !== 'components/templates/ActivityLog/ActivityLog.vue'))('%s asks the one helper', (file) => {
         const source = fs.readFileSync(path.resolve(HERE, '../../src', file), 'utf8');
 
-        expect(source).toMatch(/from ['"]@\/utils\/clockText['"]/);
+        expect(source).toMatch(/from ['"]@\/(utils\/clockText|views\/Settings\/Language\/localePrefs)['"]/);
     });
 });

@@ -10,6 +10,7 @@ vi.mock('@/components/organisms/Shell/ShellIcon.vue', () => ({ default: { name: 
 vi.mock('@/components/organisms/TaskDetailOverlay/useTaskOverlay', () => ({ openTask }));
 
 import RunHistoryDrawer from '@/views/Automations/RunHistoryDrawer.vue';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 import AutomationsPage from '@/views/Automations/AutomationsPage.vue';
 
 const RULE = { _id: 'r1', enabled: true, sentence: 'When priority changes, comment', firedCount: 4, trigger: { type: 'event', event: 'task.priority_changed' }, steps: [] };
@@ -63,7 +64,7 @@ describe('RunHistoryDrawer', () => {
         const wrapper = await mountDrawer();
         const rows = wrapper.findAll('[data-test="run-row"]');
         expect(rows).toHaveLength(4);
-        expect(rows[0].find('[data-test="run-when"]').text()).toBe(new Date(RUNS[0].startedAt).toLocaleString());
+        expect(rows[0].find('[data-test="run-when"]').text()).toBe(formatDisplayDate(RUNS[0].startedAt, 'L h:mm A'));
         expect(rows[0].find('[data-test="run-trigger"]').text()).toBe('Task priority changes');
         expect(rows[0].find('[data-test="run-task"]').text()).toContain('WEB-7');
         expect(rows[0].find('[data-test="run-task"]').text()).toContain('Fix login');

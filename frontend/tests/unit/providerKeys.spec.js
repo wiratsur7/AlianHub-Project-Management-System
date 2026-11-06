@@ -8,6 +8,7 @@ vi.mock('@/services', () => ({ apiRequest }));
 vi.mock('@/components/organisms/Shell/ShellIcon.vue', () => ({ default: { name: 'ShellIcon', render: () => null } }));
 
 import ProviderKeys from '@/views/Settings/RoutingPolicy/ProviderKeys.vue';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 import en from '@/locales/en.js';
 
 const i18n = config.global.plugins[0];
@@ -18,7 +19,7 @@ const ROUTE = '/api/v2/provider-keys';
 const KEY_ID = 'k0123456789abcdef';
 const ROTATED = '2026-09-10T09:00:00.000Z';
 const RESOLVED = '2026-09-17T18:30:00.000Z';
-const when = (iso) => new Date(iso).toLocaleString();
+const when = (iso) => formatDisplayDate(iso, 'L h:mm A');
 
 const storeFor = (roleType) => createStore({ modules: { settings: { namespaced: true, getters: { companyUserDetail: () => ({ roleType }) } } } });
 

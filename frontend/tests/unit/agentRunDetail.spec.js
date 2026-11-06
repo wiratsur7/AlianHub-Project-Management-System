@@ -16,6 +16,7 @@ vi.mock('vue-toast-notification', () => ({ useToast: () => toast }));
 vi.mock('vue-i18n', async (importOriginal) => ({ ...(await importOriginal()), useI18n: () => ({ t: echo }) }));
 
 import AgentRunDetail from '@/views/Ai/AgentRunDetail.vue';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 const ok = (data) => Promise.resolve({ data: { status: true, data } });
 const httpError = (status, statusText) => Object.assign(new Error(`Request failed with status code ${status}`), { response: { status, data: { status: false, statusText } } });
@@ -66,7 +67,7 @@ describe('AgentRunDetail', () => {
 
     it('shows the undo deadline while the window is open', async () => {
         const wrapper = await mountDetail({ payload: { run: { ...run, undoUntil: future, undoable: true, undoReason: '' }, audit: [] } });
-        expect(wrapper.find('[data-test="undo-deadline"]').text()).toBe(`Ai.undo_until {"at":"${new Date(future).toLocaleString()}"}`);
+        expect(wrapper.find('[data-test="undo-deadline"]').text()).toBe(`Ai.undo_until {"at":"${formatDisplayDate(future, 'L h:mm A')}"}`);
         expect(wrapper.find('button').attributes('disabled')).toBeUndefined();
         expect(wrapper.find('[data-test="undo-reason"]').exists()).toBe(false);
     });
@@ -74,7 +75,7 @@ describe('AgentRunDetail', () => {
     it('keeps the control but disables it with the reason once the window has passed', async () => {
         const past = new Date(Date.now() - 3600e3).toISOString();
         const wrapper = await mountDetail({ payload: { run: { ...run, windowEndsAt: past, undoUntil: past, undoable: false, undoReason: 'undo_window_passed' }, audit: [] } });
-        expect(wrapper.find('[data-test="undo-deadline"]').text()).toBe(`Ai.undo_window_closed_at {"at":"${new Date(past).toLocaleString()}"}`);
+        expect(wrapper.find('[data-test="undo-deadline"]').text()).toBe(`Ai.undo_window_closed_at {"at":"${formatDisplayDate(past, 'L h:mm A')}"}`);
         const button = wrapper.find('button');
         expect(button.exists()).toBe(true);
         expect(button.attributes('disabled')).toBeDefined();

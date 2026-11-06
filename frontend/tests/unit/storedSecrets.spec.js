@@ -7,6 +7,7 @@ vi.mock('@/services', () => ({ apiRequest }));
 vi.mock('@/components/organisms/Shell/ShellIcon.vue', () => ({ default: { name: 'ShellIcon', render: () => null } }));
 
 import StoredSecrets from '@/views/Settings/Integrations/StoredSecrets.vue';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 import en from '@/locales/en.js';
 
 const i18n = config.global.plugins[0];
@@ -20,7 +21,7 @@ const CREATED = '2026-09-01T09:00:00.000Z';
 const ROTATED = '2026-09-10T09:00:00.000Z';
 const RESOLVED = '2026-09-17T18:30:00.000Z';
 const REVOKED = '2026-09-12T09:00:00.000Z';
-const when = (iso) => new Date(iso).toLocaleString();
+const when = (iso) => formatDisplayDate(iso, 'L h:mm A');
 
 const row = (over) => ({ handle: `sec_${over.name.replace(/\W/g, '').padEnd(24, '0').slice(0, 24)}`, kind: 'integration', keyId: KEY_ID, createdBy: 'u1', createdAt: CREATED, rotatedAt: null, revokedAt: null, lastResolvedAt: null, ...over });
 

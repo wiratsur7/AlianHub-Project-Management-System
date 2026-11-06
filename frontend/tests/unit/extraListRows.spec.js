@@ -439,7 +439,7 @@ describe('under a search or a filter', () => {
     });
 
     it('the Board, the Table and the list of lists follow the same rule', () => {
-        expect(source('views/Projects/Kanban/BoardView.vue')).toContain('searchedTasksData.value.filter(task => inList(task, currentSprintId))');
+        expect(source('views/Projects/Kanban/BoardView.vue')).toContain('if (!inList(task, list.id)) return;');
         expect(source('views/Projects/TableView/TableViewTable.vue')).toContain('.filter((task) => inList(task, props.sprintId))');
         expect(source('views/Projects/Projects.vue').match(/inList\(y, x\.id\)/g)).toHaveLength(2);
     });

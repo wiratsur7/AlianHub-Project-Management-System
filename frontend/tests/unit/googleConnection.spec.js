@@ -15,6 +15,7 @@ vi.mock('@/components/organisms/Shell/ShellIcon.vue', () => ({ default: { name: 
 vi.mock('@/views/Ai/AiSidebar.vue', () => ({ default: { name: 'AiSidebar', render: () => null } }));
 
 import GoogleConnection from '@/views/Integrations/GoogleConnection.vue';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 import ConnectionsPage from '@/views/Integrations/ConnectionsPage.vue';
 import en from '@/locales/en.js';
 
@@ -110,7 +111,7 @@ describe('my Google connection', () => {
         const { wrapper } = await open();
         const state = wrapper.find('[data-test="google-state"]').text();
         expect(state).toContain(t('GoogleConnection.connected_as', { email: 'me@example.test' }));
-        expect(state).toContain(t('GoogleConnection.connected_on', { when: new Date(CONNECTED_AT).toLocaleString() }));
+        expect(state).toContain(t('GoogleConnection.connected_on', { when: formatDisplayDate(CONNECTED_AT, 'L h:mm A') }));
         expect(wrapper.find('[data-test="google-connect"]').text()).toBe(t('GoogleConnection.reconnect'));
         expect(wrapper.find('[data-test="google-disconnect"]').exists()).toBe(true);
         expect(wrapper.find('[data-test="google-broken"]').exists()).toBe(false);
@@ -118,7 +119,7 @@ describe('my Google connection', () => {
 
     it('says a connection Google stopped accepting needs reconnecting', async () => {
         const { wrapper } = await open({ mine: [mineOf({ status: 'broken', brokenReason: 'invalid_grant', brokenAt: CONNECTED_AT })] });
-        expect(wrapper.find('[data-test="google-broken"]').text()).toBe(t('GoogleConnection.state_broken', { when: new Date(CONNECTED_AT).toLocaleString() }));
+        expect(wrapper.find('[data-test="google-broken"]').text()).toBe(t('GoogleConnection.state_broken', { when: formatDisplayDate(CONNECTED_AT, 'L h:mm A') }));
         expect(wrapper.find('[data-test="google-connect"]').text()).toBe(t('GoogleConnection.reconnect'));
     });
 

@@ -45,8 +45,13 @@ vi.mock('@/services', () => {
             return [{ result: rows.slice(skip).map((task) => ({ ...task })), count: rows.length ? [{ count: rows.length }] : [] }];
         }
         return [Object.fromEntries(Object.entries(facet).map(([name, pipeline]) => {
-            const count = rows.filter((task) => matches(task, pipeline[0].$match)).length;
-            return [name, count ? [{ count }] : []];
+            const inGroup = rows.filter((task) => matches(task, pipeline[0].$match));
+            if (pipeline.some((stage) => '$limit' in stage)) {
+                const skip = pipeline.find((stage) => '$skip' in stage)?.$skip || 0;
+                const limit = pipeline.find((stage) => '$limit' in stage).$limit;
+                return [name, inGroup.slice(skip, skip + limit).map((task) => ({ ...task }))];
+            }
+            return [name, inGroup.length ? [{ count: inGroup.length }] : []];
         }))];
     };
     return {

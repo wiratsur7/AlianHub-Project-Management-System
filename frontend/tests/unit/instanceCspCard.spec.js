@@ -7,6 +7,7 @@ vi.mock('@/services', () => ({ apiRequestWithoutCompnay }));
 vi.mock('@/components/organisms/Shell/ShellIcon.vue', () => ({ default: { name: 'ShellIcon', render: () => null } }));
 
 import InstanceCspCard from '@/views/Settings/Instance/InstanceCspCard.vue';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 const ROUTE = '/api/v2/instance/csp';
 const LAST = '2026-09-18T10:00:00.000Z';
@@ -58,7 +59,7 @@ describe('InstanceCspCard', () => {
         expect(rows[0].text()).toContain('inline');
         expect(rows[0].text()).toContain('style-src-elem');
         expect(rows[0].text()).toContain('9');
-        expect(rows[0].text()).toContain(new Date(LAST).toLocaleString());
+        expect(rows[0].text()).toContain(formatDisplayDate(LAST, 'L h:mm A'));
         expect(rows[1].text()).toContain('cdn.example.com');
     });
 

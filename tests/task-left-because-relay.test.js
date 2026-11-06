@@ -30,7 +30,7 @@ describe('the reason a task left its list', () => {
         await settle();
 
         expect(mockSent.map(({ event, payload }) => [event, payload.leftBecause])).toEqual([['taskUpdate', 'moved'], ['taskDetail_taskUpdate', 'moved']]);
-        expect(mockSent[1].payload).toEqual({ fullDocument: TASK, updatedFields: { deletedStatusKey: 1 }, leftBecause: 'moved' });
+        expect(mockSent[1].payload).toEqual({ fullDocument: TASK, eventId: expect.any(String), updatedFields: { deletedStatusKey: 1 }, leftBecause: 'moved' });
     });
 
     test('is not sent with a delete', async () => {
@@ -38,6 +38,11 @@ describe('the reason a task left its list', () => {
         await settle();
 
         expect(mockSent).toHaveLength(2);
-        mockSent.forEach(({ payload }) => expect(payload).toEqual({ fullDocument: TASK, updatedFields: { deletedStatusKey: 1 } }));
+        mockSent.forEach(({ roomName, payload }) => expect(payload).toEqual({
+            fullDocument: TASK,
+            eventId: mockSent[0].payload.eventId,
+            updatedFields: { deletedStatusKey: 1 },
+            ...(roomName.startsWith('project_sprint_') ? { membershipSprintId: 's1' } : {}),
+        }));
     });
 });

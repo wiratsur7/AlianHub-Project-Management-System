@@ -12,6 +12,7 @@ vi.mock('@/views/Ai/AiSidebar.vue', () => ({ default: { name: 'AiSidebar', rende
 vi.mock('@/views/Ai/AccountAttribution.vue', () => ({ default: { name: 'AccountAttribution', render: () => null } }));
 
 import AiAccounts from '@/views/Ai/AiAccounts.vue';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 import en from '@/locales/en.js';
 
 const i18n = config.global.plugins[0];
@@ -79,8 +80,8 @@ describe('step-scoped credentials on the tokens screen', () => {
         expect(rows[0].find('.acct-token__name').text()).toBe('Campaign build');
         expect(rows[0].text()).toContain('sResearch');
         expect(rows[0].text()).toContain('Max Member');
-        expect(rows[0].text()).toContain(t('Accounts.step_scoped_first_issued', { d: new Date(issuedAt).toLocaleString() }));
-        expect(rows[0].text()).toContain(t('Accounts.step_scoped_current_expires', { d: new Date(expiresAt).toLocaleString() }));
+        expect(rows[0].text()).toContain(t('Accounts.step_scoped_first_issued', { d: formatDisplayDate(issuedAt, 'L h:mm A') }));
+        expect(rows[0].text()).toContain(t('Accounts.step_scoped_current_expires', { d: formatDisplayDate(expiresAt, 'L h:mm A') }));
         expect(t('Accounts.step_scoped_current_expires', { d: 'x' })).toMatch(/renewed/i);
         expect(t('Accounts.step_scoped_lead')).toMatch(/extends the step's lease/i);
         expect(en.Accounts.step_scoped_expires).toBeUndefined();

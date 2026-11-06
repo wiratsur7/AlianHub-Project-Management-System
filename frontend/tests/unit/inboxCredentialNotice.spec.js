@@ -7,12 +7,13 @@ import fs from 'fs';
 import path from 'path';
 import { renderNotice } from '@/views/Inbox/renderNotice';
 import en from '@/locales/en';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
 const i18n = createI18n({ legacy: false, locale: 'en', messages: { en } });
 const t = i18n.global.t;
 const passThrough = (text) => text;
 const ENDS = '2026-10-04T09:00:00.000Z';
-const day = new Date(ENDS).toLocaleDateString();
+const day = formatDisplayDate(ENDS);
 const row = (changeData) => ({ changeType: 'credential_expiring', key: 'credential_expiring', message: 'stored text', changeData });
 const lineOf = (changeData) => renderNotice(row(changeData), { t, changeText: passThrough });
 

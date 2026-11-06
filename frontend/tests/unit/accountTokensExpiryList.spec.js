@@ -12,12 +12,13 @@ vi.mock('@/views/Ai/AiSidebar.vue', () => ({ default: { name: 'AiSidebar', rende
 vi.mock('@/views/Ai/AccountAttribution.vue', () => ({ default: { name: 'AccountAttribution', render: () => null } }));
 
 import AiAccounts from '@/views/Ai/AiAccounts.vue';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 import en from '@/locales/en.js';
 
 const i18n = config.global.plugins[0];
 i18n.global.setLocaleMessage('en', en);
 const t = i18n.global.t;
-const day = (iso) => new Date(iso).toLocaleDateString();
+const day = (iso) => formatDisplayDate(iso);
 
 const ROUTE = '/api/v2/api-tokens/needing-expiry';
 const DAY = 24 * 60 * 60 * 1000;
@@ -79,7 +80,7 @@ describe('the workspace list of tokens that still need an expiry', () => {
         const rows = section.findAll('[data-test="expiry-row"]');
         expect(rows.map((r) => r.find('.acct-token__name').text())).toEqual(['Nightly export', 'Laptop']);
         expect(rows[0].text()).toContain('Max Member');
-        expect(rows[0].text()).toContain(t('Accounts.used_on', { d: new Date(usedAt).toLocaleString() }));
+        expect(rows[0].text()).toContain(t('Accounts.used_on', { d: formatDisplayDate(usedAt, 'L h:mm A') }));
         expect(rows[0].find('[data-test="expiry-stopped"]').text()).toBe(t('Accounts.grace_stopped_on', { d: day(passed) }));
         expect(rows[0].find('[data-test="expiry-grace"]').exists()).toBe(false);
         expect(rows[1].text()).toContain('Olivia Owner');

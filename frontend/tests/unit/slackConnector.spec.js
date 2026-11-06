@@ -8,6 +8,7 @@ vi.mock('@/services', () => ({ apiRequest }));
 vi.mock('@/components/organisms/Shell/ShellIcon.vue', () => ({ default: { name: 'ShellIcon', render: () => null } }));
 
 import SlackConnector from '@/views/Integrations/SlackConnector.vue';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 import SlackPostPreview from '@/views/Ai/SlackPostPreview.vue';
 import { taintSourcesLine } from '@/views/Ai/taintText';
 import { skillLabel, skillAbout } from '@/views/Ai/plainLabels';
@@ -59,7 +60,7 @@ beforeEach(() => {
 describe('the Slack connector section', () => {
     it('shows each secret as set with its date, or not set, and never a value', async () => {
         const wrapper = await open();
-        expect(wrapper.find('[data-test="slack-secret-bot_token"] [data-test="secret-state"]').text()).toBe(t('SlackConnector.set_on', { when: new Date(SET_AT).toLocaleString() }));
+        expect(wrapper.find('[data-test="slack-secret-bot_token"] [data-test="secret-state"]').text()).toBe(t('SlackConnector.set_on', { when: formatDisplayDate(SET_AT, 'L h:mm A') }));
         expect(wrapper.find('[data-test="slack-secret-signing_secret"] [data-test="secret-state"]').text()).toBe(t('SlackConnector.not_set'));
         expect(wrapper.find('[data-test="slack-secret-bot_token"] [data-test="secret-set"]').text()).toBe(t('SlackConnector.replace'));
         expect(wrapper.find('[data-test="slack-secret-bot_token"] [data-test="secret-remove"]').exists()).toBe(true);
@@ -160,7 +161,7 @@ describe('the Slack connector section', () => {
 
     it('tells the admin when Slack no longer accepts the token', async () => {
         const wrapper = await open({ conn: connection({ status: 'broken', brokenReason: 'invalid_auth', brokenAt: SET_AT }) });
-        expect(wrapper.find('[data-test="slack-broken"]').text()).toBe(t('SlackConnector.broken', { reason: 'invalid_auth', when: new Date(SET_AT).toLocaleString() }));
+        expect(wrapper.find('[data-test="slack-broken"]').text()).toBe(t('SlackConnector.broken', { reason: 'invalid_auth', when: formatDisplayDate(SET_AT, 'L h:mm A') }));
     });
 
     it('says a revoked secret has to be set again', async () => {

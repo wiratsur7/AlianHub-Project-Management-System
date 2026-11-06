@@ -12,13 +12,14 @@ vi.mock('@/views/Ai/AiSidebar.vue', () => ({ default: { name: 'AiSidebar', rende
 vi.mock('@/views/Ai/AccountAttribution.vue', () => ({ default: { name: 'AccountAttribution', render: () => null } }));
 
 import AiAccounts from '@/views/Ai/AiAccounts.vue';
+import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 import { tokenFormProblem } from '@/views/Ai/tokenPolicy';
 import en from '@/locales/en.js';
 
 const i18n = config.global.plugins[0];
 i18n.global.setLocaleMessage('en', en);
 const t = i18n.global.t;
-const day = (iso) => new Date(iso).toLocaleDateString();
+const day = (iso) => formatDisplayDate(iso);
 
 const DAY = 24 * 60 * 60 * 1000;
 const graceEndsAt = new Date(Date.now() + 12 * DAY).toISOString();
@@ -119,7 +120,7 @@ describe('the token list under strict mode', () => {
     it('shows when each token was last used', async () => {
         const wrapper = await openTokens({ strict: true, tokens: [token({ name: 'Used', lastUsedAt: usedAt, expiresAt: graceEndsAt }), token({ name: 'Idle', expiresAt: graceEndsAt })] });
         const rows = wrapper.findAll('.acct-token');
-        expect(rows[0].text()).toContain(t('Accounts.used_on', { d: new Date(usedAt).toLocaleString() }));
+        expect(rows[0].text()).toContain(t('Accounts.used_on', { d: formatDisplayDate(usedAt, 'L h:mm A') }));
         expect(rows[1].text()).toContain(t('Accounts.never_used'));
     });
 
