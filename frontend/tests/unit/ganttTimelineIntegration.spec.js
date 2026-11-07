@@ -4,7 +4,7 @@ import { config, flushPromises, mount } from '@vue/test-utils';
 import en from '@/locales/en.js';
 import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
 
-const { gantt, handlers, getters, updateDates, access, pluginOrder, scroll, renderBehavior } = vi.hoisted(() => {
+const { gantt, handlers, getters, updateDates, access, pluginOrder, scroll, renderBehavior, toast } = vi.hoisted(() => {
     const handlers = {};
     const access = { canEdit: true };
     const pluginOrder = [];
@@ -50,10 +50,12 @@ const { gantt, handlers, getters, updateDates, access, pluginOrder, scroll, rend
             if (!renderBehavior.delayShowDate) scroll.x = this.posFromDate(date);
         },
     };
-    return { gantt, handlers, getters: {}, updateDates: vi.fn(async () => ({})), access, pluginOrder, scroll, renderBehavior };
+    const toast = { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() };
+    return { gantt, handlers, getters: {}, updateDates: vi.fn(async () => ({})), access, pluginOrder, scroll, renderBehavior, toast };
 });
 
 vi.mock('dhtmlx-gantt', () => ({ gantt }));
+vi.mock('vue-toast-notification', () => ({ useToast: () => toast }));
 vi.mock('dhtmlx-gantt/codebase/dhtmlxgantt.css', () => ({}));
 vi.mock('vuex', () => ({ useStore: () => ({ getters }) }));
 vi.mock('@/services', () => ({ apiRequest: vi.fn(async () => ({ data: { status: false } })) }));
@@ -69,6 +71,8 @@ vi.mock('@/composable/useUndoToast', () => ({ showUndoToast: vi.fn() }));
 vi.mock('@/components/organisms/Shell/ShellIcon.vue', () => ({ default: { render: () => null } }));
 
 import GanttView from '@/views/Projects/GanttView/GanttView.vue';
+import GanttTaskMenu from '@/views/Projects/GanttView/GanttTaskMenu.vue';
+import { showUndoToast } from '@/composable/useUndoToast';
 
 const PROJECT = 'project-1';
 const SPRINT = 'sprint-1';
@@ -625,5 +629,281 @@ describe('Gantt timeline integration', () => {
             expect(gantt.render).not.toHaveBeenCalled();
             expect(width()).toBe(before);
         });
+    });
+});
+
+describe('task menu, unschedule and tray drop', () => {
+    const spanKeyOf = (taskId) => `gantt.span.v1.${PROJECT}.${taskId}`;
+    const contextMenuAt = (taskId = 'task-1') => {
+        const event = { clientX: 150, clientY: 130, preventDefault: vi.fn() };
+        const result = handlers.onContextMenu(taskId, null, event);
+        return { result, event };
+    };
+    const removeItem = (wrapper) => wrapper.findAll('.gv__menu-item')[1];
+    const scheduledTask = (extra) => makeTask('task-1', day(4, 9), day(6, 17), extra);
+    const trayTask = (extra) => makeTask('tray-1', null, null, extra);
+    const dataTransferStub = () => ({
+        types: ['application/x-alianhub-task'],
+        data: {},
+        setData(key, value) { this.data[key] = value; },
+        effectAllowed: 'uninitialized',
+        dropEffect: 'none',
+    });
+    const dragEvent = (type, dataTransfer, init = {}) => {
+        const event = new MouseEvent(type, { bubbles: true, cancelable: true, ...init });
+        Object.defineProperty(event, 'dataTransfer', { value: dataTransfer });
+        return event;
+    };
+    let dateSpy = null;
+    const pinDropDate = (value) => {
+        dateSpy = vi.spyOn(gantt, 'dateFromPos').mockReturnValue(value);
+        return dateSpy;
+    };
+    const dragTrayTo = (wrapper, clientX = 120) => {
+        const dataTransfer = dataTransferStub();
+        wrapper.get('.gv__tray-item').element.dispatchEvent(dragEvent('dragstart', dataTransfer));
+        gantt.$task.dispatchEvent(dragEvent('dragover', dataTransfer, { clientX }));
+        gantt.$task.dispatchEvent(dragEvent('drop', dataTransfer, { clientX }));
+    };
+
+    beforeEach(() => {
+        queueFrames();
+        clock.now = 1000;
+        perfSpy = vi.spyOn(performance, 'now').mockImplementation(() => clock.now);
+        showUndoToast.mockClear();
+        toast.error.mockClear();
+    });
+
+    afterEach(() => {
+        dateSpy?.mockRestore();
+        dateSpy = null;
+        perfSpy.mockRestore();
+    });
+
+    it('opens the task menu on right-click of a scheduled task with Remove enabled', async () => {
+        const wrapper = await openSettled();
+        const rect = vi.spyOn(wrapper.get('.gv__main').element, 'getBoundingClientRect')
+            .mockReturnValue({ left: 100, top: 100, width: 800, height: 400 });
+
+        const { result, event } = contextMenuAt('task-1');
+        await nextTick();
+
+        expect(result).toBe(false);
+        expect(event.preventDefault).toHaveBeenCalledTimes(1);
+        const menu = wrapper.findComponent(GanttTaskMenu);
+        expect(menu.exists()).toBe(true);
+        expect(menu.props('canUnschedule')).toBe(true);
+        expect(menu.props('x')).toBe(50);
+        expect(menu.props('y')).toBe(30);
+        rect.mockRestore();
+        wrapper.unmount();
+    });
+
+    it('leaves span, milestone and unknown ids to the native context menu', async () => {
+        const wrapper = await openSettled();
+
+        for (const id of ['sp_x', 'ms_x', 'unknown']) {
+            const { result, event } = contextMenuAt(id);
+            expect(result).toBe(true);
+            expect(event.preventDefault).not.toHaveBeenCalled();
+        }
+        await nextTick();
+        expect(wrapper.find('.gv__menu').exists()).toBe(false);
+        wrapper.unmount();
+    });
+
+    it('renders Remove disabled for read-only and archived tasks', async () => {
+        let wrapper = await openSettled({ canEdit: false });
+        contextMenuAt('task-1');
+        await nextTick();
+        expect(wrapper.findComponent(GanttTaskMenu).props('canUnschedule')).toBe(false);
+        expect(removeItem(wrapper).attributes('disabled')).toBeDefined();
+        wrapper.unmount();
+
+        wrapper = await openSettled({ tasks: [scheduledTask({ deletedStatusKey: 2 })] });
+        contextMenuAt('task-1');
+        await nextTick();
+        expect(removeItem(wrapper).attributes('disabled')).toBeDefined();
+        wrapper.unmount();
+    });
+
+    it('removes the dates, offers undo and remembers the span in storage', async () => {
+        const wrapper = await openSettled({ tasks: [scheduledTask()] });
+        contextMenuAt('task-1');
+        await nextTick();
+
+        removeItem(wrapper).trigger('click');
+        await flushPromises();
+
+        expect(updateDates).toHaveBeenCalledTimes(1);
+        expect(updateDates).toHaveBeenCalledWith(expect.objectContaining({
+            firebaseObj: { startDate: null, DueDate: null },
+        }));
+        expect(showUndoToast).toHaveBeenCalledWith(expect.objectContaining({ undo: expect.any(Function) }));
+        expect(localStorage.getItem(spanKeyOf('task-1'))).toBe(String(day(6, 17) - day(4, 9)));
+        expect(wrapper.find('.gv__menu').exists()).toBe(false);
+        wrapper.unmount();
+    });
+
+    it('undo restores the exact previous dates and clears the remembered span', async () => {
+        const task = scheduledTask();
+        const wrapper = await openSettled({ tasks: [task] });
+        contextMenuAt('task-1');
+        await nextTick();
+        removeItem(wrapper).trigger('click');
+        await flushPromises();
+
+        task.startDate = null;
+        task.DueDate = null;
+        await showUndoToast.mock.calls[0][0].undo();
+        await flushPromises();
+
+        expect(updateDates).toHaveBeenCalledTimes(2);
+        expect(updateDates).toHaveBeenLastCalledWith(expect.objectContaining({
+            firebaseObj: { startDate: day(4, 9), DueDate: day(6, 17) },
+        }));
+        expect(localStorage.getItem(spanKeyOf('task-1'))).toBeNull();
+        wrapper.unmount();
+    });
+
+    it('undo refuses to overwrite dates set again after removal', async () => {
+        const task = scheduledTask();
+        const wrapper = await openSettled({ tasks: [task] });
+        contextMenuAt('task-1');
+        await nextTick();
+        removeItem(wrapper).trigger('click');
+        await flushPromises();
+
+        task.startDate = day(10);
+        task.DueDate = day(11);
+        await showUndoToast.mock.calls[0][0].undo();
+        await flushPromises();
+
+        expect(updateDates).toHaveBeenCalledTimes(1);
+        expect(toast.error).toHaveBeenCalled();
+        wrapper.unmount();
+    });
+
+    it('skips the undo toast and forgets the span when the remove write fails', async () => {
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+        updateDates.mockRejectedValueOnce(new Error('network'));
+        const wrapper = await openSettled({ tasks: [scheduledTask()] });
+        contextMenuAt('task-1');
+        await nextTick();
+
+        removeItem(wrapper).trigger('click');
+        await flushPromises();
+
+        expect(updateDates).toHaveBeenCalledTimes(1);
+        expect(showUndoToast).not.toHaveBeenCalled();
+        expect(toast.error).toHaveBeenCalled();
+        expect(localStorage.getItem(spanKeyOf('task-1'))).toBeNull();
+        consoleError.mockRestore();
+        wrapper.unmount();
+    });
+
+    it('closes the menu on timeline scroll and on ctrl+wheel zoom', async () => {
+        const wrapper = await openSettled({ tasks: [scheduledTask()] });
+
+        contextMenuAt('task-1');
+        await nextTick();
+        expect(wrapper.find('.gv__menu').exists()).toBe(true);
+        handlers.onGanttScroll(0, 0);
+        await nextTick();
+        expect(wrapper.find('.gv__menu').exists()).toBe(false);
+
+        settle();
+        const before = width();
+        contextMenuAt('task-1');
+        await nextTick();
+        expect(wrapper.find('.gv__menu').exists()).toBe(true);
+        gantt.$root.dispatchEvent(ctrlWheel(-100));
+        settle();
+        await nextTick();
+        expect(width()).not.toBe(before);
+        expect(wrapper.find('.gv__menu').exists()).toBe(false);
+        wrapper.unmount();
+    });
+
+    it('drops a tray task on the clicked day and restores its remembered three-day span', async () => {
+        localStorage.setItem(spanKeyOf('tray-1'), String(3 * DAY_MS));
+        const wrapper = await openSettled({ tasks: [scheduledTask(), trayTask()] });
+        pinDropDate(day(12, 15));
+
+        dragTrayTo(wrapper, 120);
+        await flushPromises();
+
+        expect(updateDates).toHaveBeenCalledTimes(1);
+        expect(updateDates).toHaveBeenCalledWith(expect.objectContaining({
+            taskData: expect.objectContaining({ _id: 'tray-1' }),
+            firebaseObj: { startDate: day(12), DueDate: day(15) },
+        }));
+        expect(localStorage.getItem(spanKeyOf('tray-1'))).toBeNull();
+        wrapper.unmount();
+    });
+
+    it('drops a tray task without a remembered span as a single day', async () => {
+        const wrapper = await openSettled({ tasks: [scheduledTask(), trayTask()] });
+        pinDropDate(day(12, 15));
+
+        dragTrayTo(wrapper, 120);
+        await flushPromises();
+
+        expect(updateDates).toHaveBeenCalledWith(expect.objectContaining({
+            firebaseObj: { startDate: day(12), DueDate: day(13) },
+        }));
+        wrapper.unmount();
+    });
+
+    it('ignores a tray drop while a shift preview is open, a task drag runs, or the pointer maps to no date', async () => {
+        const shifting = await openSettled({ tasks: [scheduledTask(), trayTask()] });
+        shifting.vm.$.setupState.shiftPreview = {
+            id: 'task-1', task: scheduledTask(), from: { startDate: day(4, 9), DueDate: day(6, 17) }, to: {}, shifts: [], conflicts: [], cycle: [],
+        };
+        await nextTick();
+        pinDropDate(day(12, 15));
+        dragTrayTo(shifting, 120);
+        await flushPromises();
+        expect(updateDates).not.toHaveBeenCalled();
+        shifting.unmount();
+        dateSpy.mockRestore();
+
+        const dragging = await openSettled({ tasks: [scheduledTask(), trayTask()] });
+        gantt.dragged['task-1'] = { start_date: day(4, 9), end_date: day(6, 17) };
+        expect(handlers.onBeforeTaskDrag('task-1')).toBe(true);
+        pinDropDate(day(12, 15));
+        dragTrayTo(dragging, 120);
+        await flushPromises();
+        expect(updateDates).not.toHaveBeenCalled();
+        dragging.unmount();
+        dateSpy.mockRestore();
+
+        const unmapped = await openSettled({ tasks: [scheduledTask(), trayTask()] });
+        pinDropDate(null);
+        dragTrayTo(unmapped, 120);
+        await flushPromises();
+        expect(updateDates).not.toHaveBeenCalled();
+        unmapped.unmount();
+    });
+
+    it('marks tray items draggable only when the user can edit dates', async () => {
+        let wrapper = await openSettled({ canEdit: false, tasks: [trayTask()] });
+        expect(wrapper.get('.gv__tray-item').attributes('draggable')).toBe('false');
+        wrapper.unmount();
+
+        wrapper = await openSettled({ tasks: [trayTask()] });
+        expect(wrapper.get('.gv__tray-item').attributes('draggable')).toBe('true');
+        wrapper.unmount();
+    });
+
+    it('removes the timeline drag listeners on unmount', async () => {
+        const wrapper = await openSettled();
+        const timeline = gantt.$task;
+        const removeSpy = vi.spyOn(timeline, 'removeEventListener');
+
+        wrapper.unmount();
+
+        const removed = removeSpy.mock.calls.map(([type]) => type);
+        expect(removed).toEqual(expect.arrayContaining(['dragover', 'dragleave', 'drop', 'mousedown']));
     });
 });
