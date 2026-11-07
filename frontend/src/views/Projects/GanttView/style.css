@@ -30,6 +30,38 @@
     border-radius: var(--r-chip);
     font: var(--text-data);
 }
+.gv__menu {
+    position: absolute;
+    z-index: 6;
+    min-width: 180px;
+    padding: var(--sp-2);
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: var(--r-card);
+    box-shadow: var(--shadow-pop);
+}
+.gv__menu-item {
+    display: block;
+    width: 100%;
+    padding: var(--sp-3) var(--sp-4);
+    border: 0;
+    background: transparent;
+    color: var(--ink);
+    text-align: left;
+    font: var(--text-small);
+    cursor: pointer;
+}
+.gv__menu-item:hover,
+.gv__menu-item:focus-visible { background: var(--surface-hover); }
+.gv__menu-item:disabled { color: var(--ink-3); cursor: not-allowed; }
+.gv__droptarget-line {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--brand);
+    pointer-events: none;
+}
 .gv__spark { color: currentColor; margin-right: 2px; }
 
 .gv__main { position: relative; flex: 1 1 auto; display: flex; min-height: 360px; background: var(--surface); }
@@ -56,7 +88,9 @@
     cursor: pointer;
     transition: border-color var(--t-state) var(--ease);
 }
+.gv__tray-item[draggable="true"] { cursor: grab; }
 .gv__tray-item:hover { border-color: var(--brand); }
+.gv__tray-item--dragging { opacity: .5; }
 .gv__tray-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .gv__replan {
