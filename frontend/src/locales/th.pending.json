@@ -531,6 +531,11 @@
     "TimeTracker.desktop_title": "Desktop time tracker",
     "TimeTracker.desktop_version": "v{version}",
     "Views.drag_range": "{start} → {end}",
+    "Views.open_task": "เปิดงาน",
+    "Views.tray_drag_hint": "ลากไปวางบนไทม์ไลน์เพื่อกำหนดวัน",
+    "Views.unschedule": "นำออกจากกำหนดการ",
+    "Views.unschedule_locked": "คุณไม่สามารถเปลี่ยนวันที่ของงานนี้ได้",
+    "Views.unscheduled_done": "นำ {task} ออกจากกำหนดการแล้ว",
     "Views.zoom_hint": "กด Ctrl แล้วเลื่อนล้อเมาส์เพื่อซูม"
   }
 }
