@@ -734,11 +734,14 @@ module.exports = {
                     filter.$or = [{ DueDate: null }, { DueDate: { $exists: false } }, { DueDate: { $gte: start } }];
                 }
 
+                const update = { $set: { ...setObj } };
+                if (due === null && 'DueDate' in setObj) update.$unset = { groupByDueDateIndex: '' };
+
                 const query = {
                     type: dbCollections.TASKS,
                     data: [
                         filter,
-                        { $set: { ...setObj } },
+                        update,
                         { returnDocument: "after" }
                     ]
                 }
@@ -756,9 +759,12 @@ module.exports = {
                     socketEmitter.emit('update', { type: "update", data: result , updatedFields: setObj, module: 'task', companyId: projectData.CompanyId });
                     resolve({status: true, statusText: "Dates updated successfully"});
 
+                    const removedFromGantt = 'startDate' in setObj && 'DueDate' in setObj && start === null && due === null;
                     const historyObj = {
                         key: "Project_DueDate",
-                        message: `<b>${userData.Employee_Name}</b> rescheduled the task on the Gantt.`,
+                        message: removedFromGantt
+                            ? `<b>${userData.Employee_Name}</b> removed the task from the Gantt schedule.`
+                            : `<b>${userData.Employee_Name}</b> rescheduled the task on the Gantt.`,
                         sprintId: taskData.sprintId
                     };
                     HandleHistory('task', projectData.CompanyId, projectData._id, taskData._id, historyObj, userData)
