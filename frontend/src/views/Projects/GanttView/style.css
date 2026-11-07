@@ -53,7 +53,7 @@
 }
 .gv__menu-item:hover,
 .gv__menu-item:focus-visible { background: var(--surface-hover); }
-.gv__menu-item:disabled { color: var(--ink-3); cursor: not-allowed; }
+.gv__menu-item:disabled { color: var(--ink-2); cursor: not-allowed; }
 .gv__droptarget-line {
     position: absolute;
     top: 0;
