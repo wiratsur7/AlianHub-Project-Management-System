@@ -92,3 +92,4 @@ Auto-maintained registry of all tasks. Reflects YAML frontmatter from each `task
 | 090 | Optional Google Analytics — page-view traffic from one env variable | active | medium | — | active/090-google-analytics-env |
 | 091 | Tracker sign-in finds the workspace — one Sign in button, no address typing for hosted users | backlog | high | — | backlog/091-tracker-finds-workspace |
 | 092 | Gantt Ctrl+wheel zoom, whole-day drag snapping and date validation | active | medium | — | active/092-gantt-zoom-and-drag |
+| 093 | Gantt: remove a task from the schedule and drag it back on | active | medium | — | active/093-gantt-unschedule |

@@ -10,7 +10,7 @@ test.describe('Gantt timeline gestures', () => {
         await page.addInitScript(() => {
             try {
                 for (const key of Object.keys(localStorage)) {
-                    if (key.startsWith('gantt.zoom.v1.')) localStorage.removeItem(key);
+                    if (key.startsWith('gantt.zoom.v1.') || key.startsWith('gantt.span.v1.')) localStorage.removeItem(key);
                 }
             } catch {}
         });
@@ -139,6 +139,106 @@ test.describe('Gantt timeline gestures', () => {
             await archiveProject(owner.api, scenario.project._id);
         }
     });
+
+    test('removes a bar from the schedule from its context menu, and undo restores the same start', async ({ page, state, loginAs }) => {
+        const owner = await loginAs('owner');
+        const scenario = await createScenario(owner, state, 'tray');
+        const focusId = scenario.tasks.focus._id;
+
+        try {
+            await openChart(page, state, scenario.project);
+            await centerTimelineScroll(page);
+            await expect(barFor(page, focusId)).toBeVisible({ timeout: 30000 });
+            await waitForRenderFrames(page);
+
+            const original = await readTask(owner.api, focusId);
+            const anchorBar = barFor(page, scenario.tasks.nearby._id);
+            const originalOffset = (await leftOf(barFor(page, focusId))) - (await leftOf(anchorBar));
+
+            await page.click(`.gv__chart .gantt_task_line[task_id="${focusId}"]`, { button: 'right' });
+            await expect(page.getByRole('menu')).toBeVisible();
+            await saveAfterDrag(page, focusId, async () => {
+                await page.getByRole('menuitem', { name: 'Remove from schedule', exact: true }).click();
+            });
+
+            await expect(barFor(page, focusId)).toHaveCount(0);
+            await expect(page.locator('.gv__tray-count')).toHaveText('1');
+            await expect(page.locator('.gv__count')).toHaveText(/^3 scheduled/);
+            const removed = await readTask(owner.api, focusId);
+            expect(removed.startDate).toBeFalsy();
+            expect(removed.DueDate).toBeFalsy();
+
+            await saveAfterDrag(page, focusId, async () => {
+                await page.locator('[data-test="undo-toast-undo"]').click();
+            });
+
+            await expect(barFor(page, focusId)).toBeVisible();
+            await expect(page.locator('.gv__tray-count')).toHaveCount(0);
+            const restored = await readTask(owner.api, focusId);
+            expect(calendarDay(restored.startDate)).toBe(calendarDay(original.startDate));
+            expect(calendarDay(restored.DueDate)).toBe(calendarDay(original.DueDate));
+            await expect.poll(async () => (await leftOf(barFor(page, focusId))) - (await leftOf(anchorBar))).toBeGreaterThanOrEqual(originalOffset - 2);
+            await expect.poll(async () => (await leftOf(barFor(page, focusId))) - (await leftOf(anchorBar))).toBeLessThanOrEqual(originalOffset + 2);
+
+            await reloadAndExpectDates(page, owner.api, focusId, original);
+        } finally {
+            await archiveProject(owner.api, scenario.project._id);
+        }
+    });
+
+    test('drops a tray task onto a timeline column and keeps its remembered length', async ({ page, state, loginAs }) => {
+        const owner = await loginAs('owner');
+        const scenario = await createScenario(owner, state, 'tray');
+        const focusId = scenario.tasks.focus._id;
+        const nearbyId = scenario.tasks.nearby._id;
+
+        try {
+            await openChart(page, state, scenario.project);
+            await centerTimelineScroll(page);
+            await expect(barFor(page, focusId)).toBeVisible({ timeout: 30000 });
+            await waitForRenderFrames(page);
+
+            const original = await readTask(owner.api, focusId);
+            const nearby = await readTask(owner.api, nearbyId);
+            const originalSpan = calendarDay(original.DueDate) - calendarDay(original.startDate);
+
+            await page.click(`.gv__chart .gantt_task_line[task_id="${focusId}"]`, { button: 'right' });
+            await saveAfterDrag(page, focusId, async () => {
+                await page.getByRole('menuitem', { name: 'Remove from schedule', exact: true }).click();
+            });
+            await expect(page.locator('.gv__tray-count')).toHaveText('1');
+
+            const nearbyBar = barFor(page, nearbyId);
+            const nearbyBox = await nearbyBar.boundingBox();
+            if (!nearbyBox) throw new Error('Gantt nearby bar has no layout box');
+            const nearbySpan = calendarDay(nearby.DueDate) - calendarDay(nearby.startDate);
+            const dayWidth = nearbyBox.width / nearbySpan;
+            const nearbyLeft = nearbyBox.x;
+
+            const offsetDays = 10;
+            const timeline = await page.locator('.gv__chart .gantt_task').boundingBox();
+            if (!timeline) throw new Error('Gantt timeline has no layout box');
+            const dropX = nearbyLeft + (offsetDays + 0.5) * dayWidth;
+            expect(dropX).toBeLessThan(timeline.x + timeline.width - dayWidth);
+
+            await saveAfterDrag(page, focusId, async () => {
+                await page.locator('.gv__tray-item').first().dragTo(page.locator('.gv__chart .gantt_task'), {
+                    targetPosition: { x: dropX - timeline.x, y: timeline.height / 2 },
+                });
+            });
+
+            const dropped = await readTask(owner.api, focusId);
+            expect(calendarDay(dropped.startDate)).toBe(calendarDay(nearby.startDate) + offsetDays);
+            expect(calendarDay(dropped.DueDate) - calendarDay(dropped.startDate)).toBe(originalSpan);
+            await expect(page.locator('.gv__tray-count')).toHaveCount(0);
+            await expect.poll(async () => (await leftOf(barFor(page, focusId))) - (await leftOf(nearbyBar))).toBeGreaterThanOrEqual(offsetDays * dayWidth - 2);
+            await expect.poll(async () => (await leftOf(barFor(page, focusId))) - (await leftOf(nearbyBar))).toBeLessThanOrEqual(offsetDays * dayWidth + 2);
+
+            await reloadAndExpectDates(page, owner.api, focusId, dropped);
+        } finally {
+            await archiveProject(owner.api, scenario.project._id);
+        }
+    });
 });
 
 async function createScenario(owner, state, label) {
@@ -162,9 +262,10 @@ async function createScenario(owner, state, label) {
 
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
-    const schedules = label === 'pan'
-        ? { early: [-21, -20], nearby: [-8, -7], focus: [-2, 1], late: [20, 21] }
-        : { early: [-35, -34], nearby: [-34, -33], focus: [-35, -33], late: [-32, -31] };
+    const schedules = {
+        pan: { early: [-21, -20], nearby: [-8, -7], focus: [-2, 1], late: [20, 21] },
+        tray: { early: [-21, -20], nearby: [-8, -7], focus: [-2, 0], late: [20, 21] },
+    }[label] || { early: [-35, -34], nearby: [-34, -33], focus: [-35, -33], late: [-32, -31] };
     for (const [key, [startOffset, endOffset]] of Object.entries(schedules)) {
         const taskData = await readTask(owner.api, tasks[key]._id);
         const response = await owner.api.patch('/api/v2/tasks', {

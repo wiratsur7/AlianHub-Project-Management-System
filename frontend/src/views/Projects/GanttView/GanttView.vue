@@ -52,6 +52,16 @@
                 <template v-else>
                     <div ref="ganttEl" class="gv__chart"></div>
                     <div v-if="dragTip" class="gv__dragtip" role="status" :style="{ left: dragTip.x + 'px', top: dragTip.y + 'px' }">{{ dragTip.text }}</div>
+                    <GanttTaskMenu
+                        v-if="taskMenu"
+                        :x="taskMenu.x"
+                        :y="taskMenu.y"
+                        :can-unschedule="taskMenu.canUnschedule"
+                        @open="menuOpen"
+                        @unschedule="menuUnschedule"
+                        @close="closeTaskMenu"
+                    />
+                    <div v-if="dropLine" class="gv__droptarget-line" :style="{ left: dropLine.x + 'px' }"></div>
                     <EmptyState
                         v-if="!scheduled.length && !loading"
                         class="gv__empty"
@@ -71,7 +81,17 @@
                         <span class="ah-label">{{ $t('Views.unscheduled') }}</span>
                         <span class="ah-mono gv__tray-count">{{ unscheduled.length }}</span>
                     </div>
-                    <div v-for="t in unscheduled" :key="t._id" class="gv__tray-item" @click="open(t)">
+                    <div
+                        v-for="t in unscheduled"
+                        :key="t._id"
+                        class="gv__tray-item"
+                        :class="{ 'gv__tray-item--dragging': draggingId === String(t._id) }"
+                        :draggable="canDragFromTray(t)"
+                        :title="canDragFromTray(t) ? $t('Views.tray_drag_hint') : null"
+                        @click="open(t)"
+                        @dragstart="onTrayDragStart($event, t)"
+                        @dragend="clearTrayDrag"
+                    >
                         <span class="gv__tray-name" :title="t.TaskName">{{ t.TaskName || t.TaskKey }}</span>
                         <button v-if="canEditTaskDates(t)" type="button" class="ah-btn ah-btn--ghost ah-btn--sm" @click.stop="schedule(t)">
                             {{ $t('Views.schedule') }}
@@ -164,6 +184,8 @@ import EmptyState from '@/components/atom/EmptyState/EmptyState.vue';
 import { useAddFirstTask } from '@/views/Projects/composables/useAddFirstTask';
 import { useToast } from 'vue-toast-notification';
 import { formatDisplayDate } from '@/views/Settings/Language/localePrefs';
+import GanttTaskMenu from './GanttTaskMenu.vue';
+import { DAY, rememberSpan, spanKey, takeSpan } from './unscheduleSpan';
 
 defineOptions({ name: 'GanttView' });
 
@@ -187,8 +209,13 @@ const clientWidth = inject('$clientWidth', ref(1440));
 const ganttEl = ref(null);
 const mainEl = ref(null);
 const dragTip = ref(null);
+const draggingId = ref(null);
+const dropLine = ref(null);
 const DRAG_TIP_WIDTH = 160;
 const DRAG_TIP_HEIGHT = 28;
+const TASK_MENU_WIDTH = 200;
+const TASK_MENU_HEIGHT = 90;
+const taskMenu = ref(null);
 const loadError = ref(false);
 const loading = ref(true);
 const milestones = ref([]);
@@ -226,6 +253,10 @@ let panPointerUpHandler = null;
 let viewportWheelHandler = null;
 let scrollbarPointerDownHandler = null;
 let windowBlurHandler = null;
+let trayDragOverHandler = null;
+let trayDragLeaveHandler = null;
+let trayDropHandler = null;
+let trayDragId = null;
 let viewportInteractionRoot = null;
 let dateBatchWriteCount = 0;
 let pxPerDay = CANON.Week;
@@ -432,6 +463,11 @@ function toGanttData() {
 }
 
 const validDate = (value) => value instanceof Date && Number.isFinite(value.getTime());
+const addDays = (date, days) => {
+    const next = new Date(date);
+    next.setDate(next.getDate() + days);
+    return next;
+};
 const sameDate = (left, right) => left?.getTime() === right?.getTime();
 const sameDateInstant = (left, right) => {
     const leftTime = new Date(left).getTime();
@@ -600,6 +636,7 @@ function attachTimelinePanGuard() {
     const invalidatePendingRestore = () => { viewportRestoreVersion += 1; };
     panPointerDownHandler = (event) => {
         if (event.button !== 0 || event.target?.closest?.('.gantt_task_line, .gantt_task_link')) return;
+        closeTaskMenu();
         pendingInitialViewport = null;
         timelinePanning = true;
         invalidatePendingRestore();
@@ -612,6 +649,8 @@ function attachTimelinePanGuard() {
     };
     windowBlurHandler = () => {
         dragTip.value = null;
+        clearTrayDrag();
+        closeTaskMenu();
         const hadGesture = timelinePanning || taskDragInProgress;
         timelinePanning = false;
         if (taskDragInProgress) {
@@ -642,7 +681,56 @@ function attachTimelinePanGuard() {
             invalidatePendingRestore();
         }
     };
+    trayDragOverHandler = (e) => {
+        if (!trayDragId || !e.dataTransfer?.types?.includes('application/x-alianhub-task')) return;
+        const task = findTask(trayDragId);
+        if (!canDragFromTray(task) || trayDropBlocked()) {
+            dropLine.value = null;
+            dragTip.value = null;
+            return;
+        }
+        const day = dropDay(e.clientX);
+        if (!day || !mainEl.value) {
+            dropLine.value = null;
+            dragTip.value = null;
+            return;
+        }
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        const mainRect = mainEl.value.getBoundingClientRect();
+        const taskRect = timeline.getBoundingClientRect();
+        const scrollX = Number(gantt.getScrollState()?.x) || 0;
+        dropLine.value = { x: taskRect.left - mainRect.left + gantt.posFromDate(day) - scrollX };
+        const end = addDays(day, Math.max(1, Math.round(peekSpan(task) / DAY)));
+        dragTip.value = {
+            x: Math.min(Math.max(0, mainRect.width - DRAG_TIP_WIDTH), Math.max(0, e.clientX - mainRect.left + 12)),
+            y: Math.min(Math.max(0, mainRect.height - DRAG_TIP_HEIGHT), Math.max(0, e.clientY - mainRect.top - 30)),
+            text: t('Views.drag_range', { start: shortDate(day), end: shortDate(end) }),
+        };
+    };
+    trayDragLeaveHandler = (e) => {
+        if (e.relatedTarget && timeline.contains(e.relatedTarget)) return;
+        dropLine.value = null;
+        dragTip.value = null;
+    };
+    trayDropHandler = (e) => {
+        if (!trayDragId) return;
+        e.preventDefault();
+        const id = trayDragId;
+        const task = findTask(id);
+        const day = dropDay(e.clientX);
+        const ok = !!task && !!day && canDragFromTray(task) && !trayDropBlocked()
+            && !pendingDateWrites.has(id) && !(task.startDate && task.DueDate);
+        clearTrayDrag();
+        if (!ok) return;
+        const span = takeSpan(safeStorage(), props.projectData?._id, id);
+        saveDates(task, { startDate: day, DueDate: addDays(day, Math.max(1, Math.round(span / DAY))) });
+        scheduleViewportRangeCheck();
+    };
     timeline.addEventListener('mousedown', panPointerDownHandler, true);
+    timeline.addEventListener('dragover', trayDragOverHandler);
+    timeline.addEventListener('dragleave', trayDragLeaveHandler);
+    timeline.addEventListener('drop', trayDropHandler);
     viewportInteractionRoot.addEventListener('wheel', viewportWheelHandler, { capture: true, passive: false });
     viewportInteractionRoot.addEventListener('mousedown', scrollbarPointerDownHandler, true);
     document.addEventListener('mouseup', panPointerUpHandler, true);
@@ -651,9 +739,14 @@ function attachTimelinePanGuard() {
 }
 
 function detachTimelinePanGuard() {
+    closeTaskMenu();
     cancelZoomFrame();
     flushPersist();
+    clearTrayDrag();
     if (panPointerDownHandler) gantt?.$task?.removeEventListener('mousedown', panPointerDownHandler, true);
+    if (trayDragOverHandler) gantt?.$task?.removeEventListener('dragover', trayDragOverHandler);
+    if (trayDragLeaveHandler) gantt?.$task?.removeEventListener('dragleave', trayDragLeaveHandler);
+    if (trayDropHandler) gantt?.$task?.removeEventListener('drop', trayDropHandler);
     if (viewportWheelHandler) viewportInteractionRoot?.removeEventListener('wheel', viewportWheelHandler, true);
     if (scrollbarPointerDownHandler) viewportInteractionRoot?.removeEventListener('mousedown', scrollbarPointerDownHandler, true);
     if (panPointerUpHandler && typeof document !== 'undefined') {
@@ -666,11 +759,15 @@ function detachTimelinePanGuard() {
     viewportWheelHandler = null;
     scrollbarPointerDownHandler = null;
     windowBlurHandler = null;
+    trayDragOverHandler = null;
+    trayDragLeaveHandler = null;
+    trayDropHandler = null;
     viewportInteractionRoot = null;
     timelinePanning = false;
 }
 
 function renderData() {
+    closeTaskMenu();
     if (!ready || !gantt) return;
     if (timelinePanning || taskDragInProgress) {
         renderDeferred = true;
@@ -729,15 +826,16 @@ function saveDates(task, dates) {
     const taskId = String(task?._id || '');
     if (!taskId || pendingDateWrites.has(taskId)) return;
     pendingDateWrites.add(taskId);
-    taskClass.updateDates({
+    return taskClass.updateDates({
         firebaseObj: dates,
         projectData: buildProjectData(),
         taskData: task,
         userData: buildUserData(),
-    }).catch((e) => {
+    }).then(() => true).catch((e) => {
         console.error('Gantt: updateDates failed', e);
         toast.error(t('Views.shift_failed'));
         renderData();
+        return false;
     }).finally(() => {
         pendingDateWrites.delete(taskId);
         flushDeferredRender();
@@ -746,6 +844,11 @@ function saveDates(task, dates) {
 
 /* The batch write leaves archived tasks out, so they are never offered as shiftable. */
 const canEditTaskDates = (task) => !readOnly.value && task?.deletedStatusKey !== 2;
+const dateEditIdle = () => !shiftPreview.value && !shiftBusy.value && !taskDragInProgress && !timelinePanning && !dateBatchWriteCount;
+const canUnscheduleTask = (task) => !!task && canEditTaskDates(task) && dateEditIdle()
+    && !pendingDateWrites.has(String(task._id)) && !!(task.startDate && task.DueDate);
+const canDragFromTray = (task) => !!task && canEditTaskDates(task);
+const trayDropBlocked = () => !dateEditIdle();
 const mayShift = (id) => canEditTaskDates(findTask(id));
 
 function calculateShiftPlan(id, to) {
@@ -986,6 +1089,95 @@ function schedule(task) {
     }).catch((e) => console.error('Gantt: schedule failed', e));
 }
 
+function safeStorage() {
+    try { return window.localStorage; } catch (e) { return null; }
+}
+
+async function unscheduleTask(task) {
+    if (!canUnscheduleTask(task)) return;
+    const id = String(task._id);
+    const projectId = props.projectData?._id;
+    const before = { startDate: task.startDate, DueDate: task.DueDate };
+    rememberSpan(safeStorage(), projectId, id, new Date(task.DueDate) - new Date(task.startDate));
+    const write = saveDates(task, { startDate: null, DueDate: null });
+    if (!write) {
+        takeSpan(safeStorage(), projectId, id);
+        return;
+    }
+    const ok = await write;
+    if (!ok) {
+        takeSpan(safeStorage(), projectId, id);
+        return;
+    }
+    showUndoToast({
+        message: t('Views.unscheduled_done', { task: taskLabel(task) }),
+        undo: () => {
+            const current = findTask(id);
+            if (!current || current.startDate || current.DueDate) {
+                toast.error(t('Views.shift_failed'));
+                return;
+            }
+            takeSpan(safeStorage(), projectId, id);
+            return saveDates(current, before);
+        },
+    });
+}
+
+function closeTaskMenu() {
+    taskMenu.value = null;
+}
+
+function menuOpen() {
+    const task = findTask(taskMenu.value?.id);
+    closeTaskMenu();
+    if (task) open(task);
+}
+
+function menuUnschedule() {
+    const task = findTask(taskMenu.value?.id);
+    closeTaskMenu();
+    if (task) unscheduleTask(task);
+}
+
+function clearTrayDrag() {
+    trayDragId = null;
+    draggingId.value = null;
+    dropLine.value = null;
+    dragTip.value = null;
+}
+
+function onTrayDragStart(e, task) {
+    if (!canDragFromTray(task)) {
+        e.preventDefault();
+        return;
+    }
+    trayDragId = String(task._id);
+    draggingId.value = trayDragId;
+    e.dataTransfer.setData('application/x-alianhub-task', trayDragId);
+    e.dataTransfer.effectAllowed = 'move';
+    closeTaskMenu();
+}
+
+function dropDay(clientX) {
+    if (!gantt || !gantt.$task) return null;
+    const rect = gantt.$task.getBoundingClientRect();
+    const scroll = gantt.getScrollState();
+    let date = null;
+    try { date = gantt.dateFromPos((Number(scroll?.x) || 0) + clientX - rect.left); } catch (e) { /* chart is not ready */ }
+    if (!validDate(date)) return null;
+    const day = new Date(date);
+    day.setHours(0, 0, 0, 0);
+    return day;
+}
+
+function peekSpan(task) {
+    let raw = null;
+    try { raw = safeStorage()?.getItem(spanKey(props.projectData?._id, String(task._id))); } catch (e) { /* storage blocked */ }
+    const ms = Number(raw);
+    if (!Number.isFinite(ms) || ms <= 0) return DAY;
+    return Math.max(1, Math.round(ms / DAY)) * DAY;
+}
+
 /* ------------------------------------- zoom ------------------------------------- */
 // dhtmlx lays its rows out in pixels: the List's row height for the look, 36px where a look names none.
 const lookRowHeight = () => readLookLength('--row-h', 36);
@@ -999,6 +1191,7 @@ function applyScales(ppd, band) {
 }
 
 function applyPpd(next, { clientX, forceBand } = {}) {
+    closeTaskMenu();
     const ppd = clampPpd(next);
     if (ppd === null) return;
     const band = forceBand || bandFor(ppd, zoom.value);
@@ -1214,6 +1407,7 @@ onMounted(async () => {
         }
 
         eventIds.push(gantt.attachEvent('onBeforeTaskDrag', (id) => {
+            closeTaskMenu();
             const task = findTask(id);
             const allowed = !shiftPreview.value && !shiftBusy.value && !dateBatchWriteCount
                 && !pendingDateWrites.has(String(id)) && canEditTaskDates(task);
@@ -1255,7 +1449,24 @@ onMounted(async () => {
             return true;
         }));
         eventIds.push(gantt.attachEvent('onAfterTaskDrag', (id, mode) => onTaskDragged(id, mode)));
-        eventIds.push(gantt.attachEvent('onGanttScroll', () => scheduleViewportRangeCheck()));
+        eventIds.push(gantt.attachEvent('onGanttScroll', () => {
+            closeTaskMenu();
+            scheduleViewportRangeCheck();
+        }));
+        eventIds.push(gantt.attachEvent('onContextMenu', (taskId, linkId, e) => {
+            const id = String(taskId || '');
+            const task = findTask(taskId);
+            if (!id || id.startsWith('sp_') || id.startsWith('ms_') || !task || !mainEl.value) return true;
+            e.preventDefault();
+            const rect = mainEl.value.getBoundingClientRect();
+            taskMenu.value = {
+                id,
+                x: Math.min(Math.max(0, rect.width - TASK_MENU_WIDTH), Math.max(0, e.clientX - rect.left)),
+                y: Math.min(Math.max(0, rect.height - TASK_MENU_HEIGHT), Math.max(0, e.clientY - rect.top)),
+                canUnschedule: canUnscheduleTask(task),
+            };
+            return false;
+        }));
         eventIds.push(gantt.attachEvent('onBeforeLinkAdd', () => !shiftPreview.value && !shiftBusy.value));
         eventIds.push(gantt.attachEvent('onBeforeLinkDelete', () => !shiftPreview.value && !shiftBusy.value));
         eventIds.push(gantt.attachEvent('onAfterLinkAdd', (id, link) => persistLinkAdd(id, link)));
@@ -1345,6 +1556,7 @@ onBeforeUnmount(() => {
     taskDragInProgress = false;
     activeTaskDragSnapshot = null;
     dragTip.value = null;
+    taskMenu.value = null;
     viewportRestoreVersion += 1;
     renderDeferred = false;
     pendingDateWrites.clear();

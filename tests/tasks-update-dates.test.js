@@ -124,12 +124,39 @@ describe('updateDates', () => {
         expect(socketEmitter.emit).not.toHaveBeenCalled();
     });
 
-    test('a null due date clears the field and adds no counterpart guard', async () => {
+    test('a null due date clears the field, unsets the due date index and adds no counterpart guard', async () => {
         const result = await run({ DueDate: null });
         expect(result).toEqual({ status: true, statusText: 'Dates updated successfully' });
         const [, query] = callsOf('findOneAndUpdate')[0];
-        expect(query.data[1]).toEqual({ $set: { DueDate: null } });
+        expect(query.data[1]).toEqual({ $set: { DueDate: null }, $unset: { groupByDueDateIndex: '' } });
         expect(Object.keys(query.data[0])).toEqual(['_id']);
+    });
+
+    test('clearing both dates unsets the due date index and records the removal from the Gantt', async () => {
+        const result = await run({ startDate: null, DueDate: null });
+        expect(result).toEqual({ status: true, statusText: 'Dates updated successfully' });
+        const [, query] = callsOf('findOneAndUpdate')[0];
+        expect(query.data[1]).toEqual({
+            $set: { startDate: null, DueDate: null },
+            $unset: { groupByDueDateIndex: '' },
+        });
+        expect(HandleHistory.mock.calls[0][4].message).toBe('<b>Max</b> removed the task from the Gantt schedule.');
+    });
+
+    test('clearing only the due date unsets the due date index and keeps the start date', async () => {
+        const result = await run({ DueDate: null });
+        expect(result.status).toBe(true);
+        const [, query] = callsOf('findOneAndUpdate')[0];
+        expect(query.data[1].$unset).toEqual({ groupByDueDateIndex: '' });
+        expect(query.data[1].$set).not.toHaveProperty('startDate');
+    });
+
+    test('setting dates writes no unset and records a reschedule', async () => {
+        const result = await run({ startDate: '2026-09-02T00:00:00.000Z', DueDate: '2026-09-04T00:00:00.000Z' });
+        expect(result.status).toBe(true);
+        const [, query] = callsOf('findOneAndUpdate')[0];
+        expect(query.data[1]).not.toHaveProperty('$unset');
+        expect(HandleHistory.mock.calls[0][4].message).toBe('<b>Max</b> rescheduled the task on the Gantt.');
     });
 
     test('an empty start date clears the field', async () => {
